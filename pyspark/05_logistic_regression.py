@@ -251,9 +251,12 @@ from pyspark.sql.types import DoubleType
 extractProb = udf(lambda v: float(v[1]), DoubleType())
 predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
 
+from pyspark.sql.functions import count as spark_count, mean as spark_mean
+
 predictions.groupBy("label") \
     .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
+        spark_count("pred_prob").alias("count_pred_prob"),
+        spark_mean("pred_prob").alias("mean_pred_prob")
     ) \
     .show()
 
