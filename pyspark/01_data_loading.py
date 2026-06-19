@@ -4,25 +4,37 @@ Purpose: Load and explore the HOME_EQUITY dataset
 Dataset: data/home_equity.csv - Home equity loan data for risk analysis
 
 Migrated from: sas/01_data_loading.sas
+
+Run with: python pyspark/01_data_loading.py
 """
+
+import os
 
 from pyspark.sql import SparkSession
 
 
+def get_data_path():
+    """Resolve data/home_equity.csv relative to the project root."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    return os.path.join(project_root, "data", "home_equity.csv")
+
+
 def main():
-    # SAS equivalent: SAS session is implicit; PySpark requires an explicit SparkSession.
+    # SAS: a SAS session is implicit -> PySpark: build an explicit SparkSession.
     spark = SparkSession.builder \
         .appName("HomeEquity_DataLoading") \
         .master("local[*]") \
         .getOrCreate()
 
-    # Step 1: Import CSV data into a Spark DataFrame.
-    # SAS equivalent: PROC IMPORT dbms=csv (guessingrows -> inferSchema=True).
-    df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
+    # SAS: PROC IMPORT datafile=... dbms=csv guessingrows=5960
+    # PySpark: spark.read.csv() with header + schema inference.
+    data_path = get_data_path()
+    df = spark.read.csv(data_path, header=True, inferSchema=True)
 
-    # Step 2: Document variable labels as a metadata dictionary.
-    # SAS equivalent: PROC DATASETS ... LABEL statements (PySpark has no native labels).
-    columnLabels = {
+    # SAS: PROC DATASETS ... LABEL statements (display/metadata documentation).
+    # PySpark: no native column labels -> capture them in a dictionary.
+    column_labels = {
         "BAD": "Loan Status (1=Default, 0=Paid)",
         "LOAN": "Amount of Loan Request",
         "MORTDUE": "Amount Due on Existing Mortgage",
@@ -43,27 +55,22 @@ def main():
         "REGION": "Census Region",
     }
 
-    # Step 3: Display column labels for documentation/reporting.
-    # SAS equivalent: labels are surfaced in PROC CONTENTS / PROC PRINT output.
     print("Column Labels:")
-    for colName, label in columnLabels.items():
-        print(f"  {colName}: {label}")
+    for col_name, label in column_labels.items():
+        print(f"  {col_name}: {label}")
 
-    # Step 4: Display dataset metadata (column names, types).
-    # SAS equivalent: PROC CONTENTS.
+    # SAS: PROC CONTENTS -> PySpark: printSchema() for column names and types.
     print("\nHOME_EQUITY Dataset Metadata (schema):")
     df.printSchema()
 
-    rowCount = df.count()
-    print(f"\nRow count: {rowCount}")
+    print(f"\nRow count: {df.count()}")
     print(f"Column count: {len(df.columns)}")
 
-    # Step 5: Preview the first 20 observations.
-    # SAS equivalent: PROC PRINT data=work.home_equity(obs=20).
+    # SAS: PROC PRINT data=work.home_equity(obs=20) -> PySpark: df.show(20).
     print("\nFirst 20 Observations of HOME_EQUITY:")
     df.show(20, truncate=False)
 
-    # SAS equivalent: end of SAS session.
+    # SAS: end of session -> PySpark: stop the SparkSession.
     spark.stop()
 
 
