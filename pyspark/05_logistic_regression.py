@@ -5,7 +5,7 @@ Equivalent SAS Program: sas/05_logistic_regression.sas
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit
+from pyspark.sql.functions import col, when, lit, count as spark_count, mean as spark_mean
 from pyspark.ml.feature import (
     VectorAssembler, StringIndexer, OneHotEncoder
 )
@@ -253,7 +253,8 @@ predictions = predictions.withColumn("pred_prob", extractProb(col("probability")
 
 predictions.groupBy("label") \
     .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
+        spark_count("pred_prob").alias("count_pred_prob"),
+        spark_mean("pred_prob").alias("mean_pred_prob")
     ) \
     .show()
 
