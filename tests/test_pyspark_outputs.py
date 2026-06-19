@@ -143,7 +143,8 @@ class TestHomeEquityPySpark(unittest.TestCase):
     # ------------------------------------------------------------------
     def test_frequency_counts(self):
         """Verify groupBy counts produce valid results."""
-        jobCounts = self.df.groupBy("JOB").count().collect()
+        jobCounts = self.df.filter(col("JOB").isNotNull()) \
+            .groupBy("JOB").count().collect()
         self.assertTrue(len(jobCounts) > 0, "No job categories found")
 
         # Check that total counts sum to dataset size (minus nulls)
