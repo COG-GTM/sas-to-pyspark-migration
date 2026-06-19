@@ -7,7 +7,13 @@ Ensures correctness of the migrated SAS-to-PySpark logic.
 import unittest
 import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit, mean, count
+from pyspark.sql.functions import (
+    col, when, lit, mean, count, sum as spark_sum,
+    percent_rank, ceil as spark_ceil, udf,
+    min as spark_min, max as spark_max
+)
+from pyspark.sql.types import DoubleType
+from pyspark.sql.window import Window
 
 
 class TestHomeEquityPySpark(unittest.TestCase):
@@ -388,6 +394,295 @@ class TestHomeEquityPySpark(unittest.TestCase):
         )
         auc = evaluator.evaluate(predictions)
         self.assertGreater(auc, 0.5, f"AUC ({auc:.4f}) should be > 0.5")
+
+
+    # ------------------------------------------------------------------
+    # Test 06: Model Scoring and Evaluation Pipeline
+    # ------------------------------------------------------------------
+    def _build_scoring_pipeline(self):
+        """Helper: prepare data, train model, score holdout set."""
+        from pyspark.ml.feature import VectorAssembler, StringIndexer, OneHotEncoder
+        from pyspark.ml.classification import LogisticRegression
+        from pyspark.ml import Pipeline
+
+        modelData = self.df.filter(
+            col("LOAN").isNotNull() &
+            col("MORTDUE").isNotNull() &
+            col("VALUE").isNotNull() &
+            col("DEBTINC").isNotNull() &
+            col("DELINQ").isNotNull() &
+            col("CLAGE").isNotNull() &
+            col("DEROG").isNotNull() &
+            col("NINQ").isNotNull() &
+            col("JOB").isNotNull() &
+            col("REASON").isNotNull()
+        ).withColumn("label", col("BAD").cast("double"))
+
+        train, remaining = modelData.randomSplit([0.6, 0.4], seed=42)
+        valid, holdout = remaining.randomSplit([0.5, 0.5], seed=42)
+
+        jobIdx = StringIndexer(inputCol="JOB", outputCol="JOB_IDX", handleInvalid="keep")
+        reasonIdx = StringIndexer(inputCol="REASON", outputCol="REASON_IDX", handleInvalid="keep")
+        jobEnc = OneHotEncoder(inputCol="JOB_IDX", outputCol="JOB_VEC")
+        reasonEnc = OneHotEncoder(inputCol="REASON_IDX", outputCol="REASON_VEC")
+
+        assembler = VectorAssembler(
+            inputCols=["LOAN", "MORTDUE", "VALUE", "DEBTINC",
+                        "DELINQ", "DEROG", "CLAGE", "NINQ",
+                        "JOB_VEC", "REASON_VEC"],
+            outputCol="features"
+        )
+
+        lr = LogisticRegression(
+            featuresCol="features", labelCol="label",
+            maxIter=100, regParam=0.01, elasticNetParam=0.8
+        )
+
+        pipeline = Pipeline(stages=[
+            jobIdx, reasonIdx, jobEnc, reasonEnc, assembler, lr
+        ])
+
+        model = pipeline.fit(train)
+
+        extractProb = udf(lambda v: float(v[1]), DoubleType())
+
+        holdoutScored = model.transform(holdout)
+        holdoutScored = holdoutScored.withColumn(
+            "pred_prob", extractProb(col("probability"))
+        ).withColumn(
+            "PREDICTED_BAD",
+            when(col("pred_prob") >= 0.5, lit(1)).otherwise(lit(0))
+        )
+
+        return model, train, valid, holdout, holdoutScored
+
+    def test_scoring_three_way_split(self):
+        """Verify 60/20/20 split produces three non-empty partitions."""
+        modelData = self.df.filter(
+            col("LOAN").isNotNull() &
+            col("MORTDUE").isNotNull() &
+            col("VALUE").isNotNull() &
+            col("DEBTINC").isNotNull() &
+            col("DELINQ").isNotNull() &
+            col("CLAGE").isNotNull() &
+            col("DEROG").isNotNull() &
+            col("NINQ").isNotNull() &
+            col("JOB").isNotNull() &
+            col("REASON").isNotNull()
+        )
+        total = modelData.count()
+        self.assertTrue(total > 100, "Not enough complete cases for modeling")
+
+        train, remaining = modelData.randomSplit([0.6, 0.4], seed=42)
+        valid, holdout = remaining.randomSplit([0.5, 0.5], seed=42)
+
+        self.assertTrue(train.count() > 0, "Training set is empty")
+        self.assertTrue(valid.count() > 0, "Validation set is empty")
+        self.assertTrue(holdout.count() > 0, "Holdout set is empty")
+        self.assertEqual(
+            train.count() + valid.count() + holdout.count(), total,
+            "Split sizes do not sum to total"
+        )
+
+    def test_scoring_pipeline_produces_predictions(self):
+        """Verify scoring pipeline produces valid predictions on holdout."""
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        self.assertIn("prediction", holdoutScored.columns)
+        self.assertIn("probability", holdoutScored.columns)
+        self.assertIn("pred_prob", holdoutScored.columns)
+        self.assertIn("PREDICTED_BAD", holdoutScored.columns)
+
+        predValues = set(
+            row["prediction"]
+            for row in holdoutScored.select("prediction").distinct().collect()
+        )
+        self.assertTrue(predValues.issubset({0.0, 1.0}))
+
+    def test_scoring_predicted_bad_matches_threshold(self):
+        """Verify PREDICTED_BAD matches the 0.5 threshold on pred_prob."""
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        mismatch = holdoutScored.filter(
+            ((col("pred_prob") >= 0.5) & (col("PREDICTED_BAD") != 1)) |
+            ((col("pred_prob") < 0.5) & (col("PREDICTED_BAD") != 0))
+        ).count()
+        self.assertEqual(mismatch, 0, "PREDICTED_BAD does not match 0.5 threshold")
+
+    def test_scoring_auc_above_random(self):
+        """Verify AUC on holdout is better than random (> 0.5)."""
+        from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        evaluator = BinaryClassificationEvaluator(
+            labelCol="label", rawPredictionCol="rawPrediction",
+            metricName="areaUnderROC"
+        )
+        auc = evaluator.evaluate(holdoutScored)
+        self.assertGreater(auc, 0.5, f"AUC ({auc:.4f}) should be > 0.5")
+
+    def test_scoring_gini_positive(self):
+        """Verify Gini coefficient (2*AUC - 1) is positive."""
+        from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        evaluator = BinaryClassificationEvaluator(
+            labelCol="label", rawPredictionCol="rawPrediction",
+            metricName="areaUnderROC"
+        )
+        auc = evaluator.evaluate(holdoutScored)
+        gini = 2 * auc - 1
+        self.assertGreater(gini, 0, f"Gini ({gini:.4f}) should be positive")
+
+    def test_scoring_risk_grades(self):
+        """Verify risk grade assignment covers all expected grades."""
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        scorecard = holdoutScored.withColumn(
+            "RISK_GRADE",
+            when(col("pred_prob") < 0.10, lit("A - Minimal"))
+            .when(col("pred_prob") < 0.25, lit("B - Low"))
+            .when(col("pred_prob") < 0.50, lit("C - Moderate"))
+            .when(col("pred_prob") < 0.75, lit("D - High"))
+            .otherwise(lit("E - Critical"))
+        )
+
+        validGrades = {
+            "A - Minimal", "B - Low", "C - Moderate",
+            "D - High", "E - Critical"
+        }
+        actualGrades = set(
+            row["RISK_GRADE"]
+            for row in scorecard.select("RISK_GRADE").distinct().collect()
+        )
+        self.assertTrue(
+            actualGrades.issubset(validGrades),
+            f"Unexpected risk grades: {actualGrades - validGrades}"
+        )
+        self.assertTrue(
+            len(actualGrades) >= 2,
+            "Model should produce at least 2 distinct risk grades"
+        )
+
+    def test_scoring_risk_grade_monotonic_default_rate(self):
+        """Verify higher risk grades have higher or equal default rates."""
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        scorecard = holdoutScored.withColumn(
+            "RISK_GRADE",
+            when(col("pred_prob") < 0.10, lit("A - Minimal"))
+            .when(col("pred_prob") < 0.25, lit("B - Low"))
+            .when(col("pred_prob") < 0.50, lit("C - Moderate"))
+            .when(col("pred_prob") < 0.75, lit("D - High"))
+            .otherwise(lit("E - Critical"))
+        )
+
+        gradeStats = scorecard.groupBy("RISK_GRADE").agg(
+            mean("label").alias("default_rate")
+        ).collect()
+
+        gradeOrder = ["A - Minimal", "B - Low", "C - Moderate", "D - High", "E - Critical"]
+        ratesByGrade = {row["RISK_GRADE"]: row["default_rate"] for row in gradeStats}
+
+        presentGrades = [g for g in gradeOrder if g in ratesByGrade]
+        for i in range(len(presentGrades) - 1):
+            rate_curr = ratesByGrade[presentGrades[i]]
+            rate_next = ratesByGrade[presentGrades[i + 1]]
+            self.assertLessEqual(
+                rate_curr, rate_next + 0.01,
+                f"Default rate for {presentGrades[i]} ({rate_curr:.3f}) should be "
+                f"<= {presentGrades[i + 1]} ({rate_next:.3f})"
+            )
+
+    def test_scoring_decile_analysis(self):
+        """Verify decile analysis produces 10 buckets with valid stats."""
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        windowSpec = Window.orderBy(col("pred_prob").desc())
+        holdoutDeciles = holdoutScored.withColumn(
+            "pct_rank", percent_rank().over(windowSpec)
+        ).withColumn(
+            "decile", spark_ceil(col("pct_rank") * 10).cast("int")
+        ).withColumn(
+            "decile", when(col("decile") == 0, lit(1)).otherwise(col("decile"))
+        )
+
+        gainsTable = holdoutDeciles.groupBy("decile").agg(
+            count("*").alias("N"),
+            spark_sum("label").cast("int").alias("Defaults"),
+            mean("pred_prob").alias("Avg_Score"),
+            spark_min("pred_prob").alias("Min_Score"),
+            spark_max("pred_prob").alias("Max_Score")
+        ).orderBy("decile").collect()
+
+        self.assertEqual(len(gainsTable), 10, "Should have exactly 10 deciles")
+
+        for row in gainsTable:
+            self.assertTrue(row["N"] > 0, f"Decile {row['decile']} is empty")
+            self.assertGreaterEqual(row["Avg_Score"], 0.0)
+            self.assertLessEqual(row["Avg_Score"], 1.0)
+
+    def test_scoring_ks_statistic(self):
+        """Verify KS statistic is between 0 and 1."""
+        from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        totalDefaults = holdoutScored.filter(col("label") == 1.0).count()
+        totalN = holdoutScored.count()
+        self.assertTrue(totalDefaults > 0, "No defaults in holdout set")
+
+        windowSpec = Window.orderBy(col("pred_prob").desc())
+        holdoutDeciles = holdoutScored.withColumn(
+            "pct_rank", percent_rank().over(windowSpec)
+        ).withColumn(
+            "decile", spark_ceil(col("pct_rank") * 10).cast("int")
+        ).withColumn(
+            "decile", when(col("decile") == 0, lit(1)).otherwise(col("decile"))
+        )
+
+        gainsRows = holdoutDeciles.groupBy("decile").agg(
+            count("*").alias("N"),
+            spark_sum("label").cast("int").alias("Defaults")
+        ).orderBy("decile").collect()
+
+        cumDefaults = 0
+        cumN = 0
+        ksMax = 0.0
+        for row in gainsRows:
+            cumDefaults += row["Defaults"]
+            cumN += row["N"]
+            cumDefPct = cumDefaults / totalDefaults
+            cumPopPct = cumN / totalN
+            ksDiff = abs(cumDefPct - cumPopPct)
+            if ksDiff > ksMax:
+                ksMax = ksDiff
+
+        self.assertGreater(ksMax, 0.0, "KS statistic should be > 0")
+        self.assertLessEqual(ksMax, 1.0, "KS statistic should be <= 1")
+
+    def test_scoring_pred_prob_range(self):
+        """Verify predicted probabilities are between 0 and 1."""
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        minProb = holdoutScored.agg(spark_min("pred_prob")).collect()[0][0]
+        maxProb = holdoutScored.agg(spark_max("pred_prob")).collect()[0][0]
+        self.assertGreaterEqual(minProb, 0.0, "Min pred_prob should be >= 0")
+        self.assertLessEqual(maxProb, 1.0, "Max pred_prob should be <= 1")
+
+    def test_scoring_confusion_matrix_sums(self):
+        """Verify confusion matrix entries sum to holdout count."""
+        _, _, _, _, holdoutScored = self._build_scoring_pipeline()
+
+        cmRows = holdoutScored.groupBy("label", "PREDICTED_BAD") \
+            .count().collect()
+        cmTotal = sum(row["count"] for row in cmRows)
+        self.assertEqual(
+            cmTotal, holdoutScored.count(),
+            "Confusion matrix counts do not sum to holdout size"
+        )
 
 
 if __name__ == "__main__":
