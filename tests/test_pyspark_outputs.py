@@ -146,8 +146,11 @@ class TestHomeEquityPySpark(unittest.TestCase):
         jobCounts = self.df.groupBy("JOB").count().collect()
         self.assertTrue(len(jobCounts) > 0, "No job categories found")
 
-        # Check that total counts sum to dataset size (minus nulls)
-        totalFromGroups = sum(row["count"] for row in jobCounts)
+        # Check that total counts sum to dataset size (minus nulls).
+        # groupBy includes a null-JOB group, so exclude it from the sum.
+        totalFromGroups = sum(
+            row["count"] for row in jobCounts if row["JOB"] is not None
+        )
         nonNullJobs = self.df.filter(col("JOB").isNotNull()).count()
         self.assertEqual(totalFromGroups, nonNullJobs)
 
