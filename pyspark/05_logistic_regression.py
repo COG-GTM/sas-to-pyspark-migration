@@ -13,11 +13,16 @@ Run with: python pyspark/05_logistic_regression.py
 import os
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit, mean, stddev, min as smin, max as smax, median
+from pyspark.sql.functions import col, when, lit, mean, stddev, min as smin, max as smax, percentile_approx
 from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
 from pyspark.ml.classification import LogisticRegression
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
+
+
+# Median via percentile_approx (works on PySpark 3.1+; functions.median needs 3.4+).
+def median(c):
+    return percentile_approx(col(c), 0.5)
 
 
 def get_data_path():
@@ -161,6 +166,18 @@ def main():
     )
     auc = evaluator.evaluate(predictions)
     print(f"\nModel Performance - Area Under ROC (AUC): {auc:.4f}")
+
+    # Model internals (parameter estimates and training fit).
+    # SAS: PROC LOGISTIC parameter estimates + Association statistics.
+    lr_model = model.stages[-1]
+    print("\nModel Parameter Estimates:")
+    print(f"  Intercept: {lr_model.intercept:.6f}")
+    for i, coef in enumerate(lr_model.coefficients):
+        print(f"  feature[{i}]: {coef:.6f}")
+
+    training_summary = lr_model.summary
+    print(f"  Training accuracy:      {training_summary.accuracy:.4f}")
+    print(f"  Training areaUnderROC:  {training_summary.areaUnderROC:.4f}")
 
     # Step 7: Score distribution by actual outcome.
     # SAS: PROC MEANS class BAD; var pred_prob;

@@ -15,8 +15,13 @@ import os
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, when, lit, count, mean, median, stddev, min as smin, max as smax,
+    col, when, lit, count, mean, percentile_approx, stddev, min as smin, max as smax,
 )
+
+
+# Median via percentile_approx (works on PySpark 3.1+; functions.median needs 3.4+).
+def median(c):
+    return percentile_approx(col(c), 0.5)
 
 
 def get_data_path():
