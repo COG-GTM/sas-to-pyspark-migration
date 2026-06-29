@@ -1,0 +1,8 @@
+# Runtime + test/enrichment dependencies for CI and local development.
+pyspark==3.5.1
+pandas
+pytest
+duckdb
+requests
+# Provides distutils, removed from the stdlib in Python 3.12; required by pyspark.ml.
+setuptools<81

@@ -1,0 +1,104 @@
+{
+  "_comment": "Mock CMDB export. Stands in for a real ServiceNow / BMC CMDB. Keyed by configuration item (CI) sys_id. Used by enrich_context.py to attach downstream blast-radius and ownership context to a migration task before any code is written.",
+  "configuration_items": {
+    "CI-SAS-RISK-001": {
+      "name": "SAS Risk Segmentation Job (04_risk_segmentation)",
+      "ci_type": "Batch Job",
+      "environment": "Production",
+      "business_service": "Home Equity Loan Risk Reporting",
+      "owner_team": "Credit Risk Analytics",
+      "owner_email": "credit-risk-analytics@example.com",
+      "criticality": "Tier 1 - Business Critical",
+      "change_window": "Sat 02:00-04:00 ET",
+      "supported_by": "Data Platform Engineering",
+      "depends_on": ["CI-SAS-DATA-PREP-002", "CI-SNFLK-HOMEEQUITY-010"],
+      "downstream_consumers": [
+        {
+          "ci": "CI-RPT-REGCAP-101",
+          "name": "Regulatory Capital Report (CCAR)",
+          "type": "Reporting Pipeline",
+          "owner_team": "Regulatory Reporting",
+          "owner_email": "reg-reporting@example.com",
+          "sla": "Monthly close - T+2",
+          "impact_if_broken": "CCAR submission uses risk-segment default rates; incorrect segmentation misstates capital adequacy."
+        },
+        {
+          "ci": "CI-DASH-RISKEXEC-102",
+          "name": "Executive Risk Dashboard (Tableau)",
+          "type": "BI Dashboard",
+          "owner_team": "Risk MI",
+          "owner_email": "risk-mi@example.com",
+          "sla": "Daily refresh 06:00 ET",
+          "impact_if_broken": "Exec dashboard risk-tier KPIs go stale or wrong."
+        },
+        {
+          "ci": "CI-API-PRICING-103",
+          "name": "Loan Pricing Service",
+          "type": "Microservice",
+          "owner_team": "Lending Platform",
+          "owner_email": "lending-platform@example.com",
+          "sla": "Real-time, 99.9%",
+          "impact_if_broken": "Risk-based pricing tiers feed off RISK_SEGMENT; mispricing risk on new originations."
+        }
+      ],
+      "approvers": [
+        {"name": "Credit Risk Analytics Lead", "email": "credit-risk-analytics@example.com", "role": "Technical Owner"},
+        {"name": "Regulatory Reporting Manager", "email": "reg-reporting@example.com", "role": "Downstream Sign-off"}
+      ]
+    },
+    "CI-SAS-DATA-PREP-002": {
+      "name": "SAS Data Prep Job (01-02 loading + cleaning)",
+      "ci_type": "Batch Job",
+      "environment": "Production",
+      "business_service": "Home Equity Loan Risk Reporting",
+      "owner_team": "Data Platform Engineering",
+      "owner_email": "data-platform@example.com",
+      "criticality": "Tier 1 - Business Critical",
+      "change_window": "Sat 02:00-04:00 ET",
+      "downstream_consumers": [
+        {
+          "ci": "CI-SAS-RISK-001",
+          "name": "SAS Risk Segmentation Job (04_risk_segmentation)",
+          "type": "Batch Job",
+          "owner_team": "Credit Risk Analytics",
+          "owner_email": "credit-risk-analytics@example.com",
+          "sla": "Daily 04:00 ET",
+          "impact_if_broken": "Risk segmentation has no clean input."
+        }
+      ],
+      "approvers": [
+        {"name": "Data Platform Lead", "email": "data-platform@example.com", "role": "Technical Owner"}
+      ]
+    },
+    "CI-SNFLK-HOMEEQUITY-010": {
+      "name": "Snowflake ANALYTICS.RISK.HOME_EQUITY (source table)",
+      "ci_type": "Database Table",
+      "environment": "Production",
+      "business_service": "Home Equity Loan Risk Reporting",
+      "owner_team": "Data Platform Engineering",
+      "owner_email": "data-platform@example.com",
+      "criticality": "Tier 1 - Business Critical",
+      "downstream_consumers": [
+        {
+          "ci": "CI-SAS-RISK-001",
+          "name": "SAS Risk Segmentation Job",
+          "type": "Batch Job",
+          "owner_team": "Credit Risk Analytics",
+          "owner_email": "credit-risk-analytics@example.com",
+          "sla": "Daily 04:00 ET",
+          "impact_if_broken": "No source data for risk scoring."
+        }
+      ],
+      "approvers": [
+        {"name": "Data Platform Lead", "email": "data-platform@example.com", "role": "Data Owner"}
+      ]
+    }
+  },
+  "job_to_ci": {
+    "01_data_loading": "CI-SAS-DATA-PREP-002",
+    "02_data_cleaning": "CI-SAS-DATA-PREP-002",
+    "03_aggregation_reporting": "CI-SAS-RISK-001",
+    "04_risk_segmentation": "CI-SAS-RISK-001",
+    "05_logistic_regression": "CI-SAS-RISK-001"
+  }
+}
