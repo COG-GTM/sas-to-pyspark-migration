@@ -6,8 +6,65 @@ Ensures correctness of the migrated SAS-to-PySpark logic.
 
 import unittest
 import os
+import csv
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit, mean, count
+from pyspark.sql.functions import col, when, lit, mean, count, round as spark_round
+
+
+def build_risk_segments(df):
+    """Apply the module-04 risk-segmentation pipeline (mirrors
+    pyspark/04_risk_segmentation.py) and return the DataFrame with
+    RISK_SCORE and RISK_SEGMENT columns."""
+    df = df.withColumn(
+        "LTV",
+        when(
+            (col("VALUE").isNotNull()) & (col("MORTDUE").isNotNull()) & (col("VALUE") > 0),
+            col("MORTDUE") / col("VALUE"),
+        ),
+    ).filter(
+        col("LOAN").isNotNull()
+        & col("VALUE").isNotNull()
+        & col("BAD").isNotNull()
+        & (col("LOAN") > 0)
+        & (col("VALUE") > 0)
+    )
+
+    ltv_score = (
+        when(col("LTV").isNull(), lit(0))
+        .when(col("LTV") >= 0.80, lit(3))
+        .when(col("LTV") >= 0.60, lit(1.5))
+        .otherwise(lit(0))
+    )
+    dti_score = (
+        when(col("DEBTINC").isNull(), lit(0))
+        .when(col("DEBTINC") >= 50, lit(3))
+        .when(col("DEBTINC") >= 40, lit(2))
+        .when(col("DEBTINC") >= 30, lit(1))
+        .otherwise(lit(0))
+    )
+    delinq_score = (
+        when(col("DELINQ").isNull(), lit(0))
+        .when(col("DELINQ") >= 4, lit(2))
+        .when(col("DELINQ") >= 2, lit(1.5))
+        .when(col("DELINQ") == 1, lit(0.5))
+        .otherwise(lit(0))
+    )
+    derog_score = (
+        when(col("DEROG").isNull(), lit(0))
+        .when(col("DEROG") >= 3, lit(2))
+        .when(col("DEROG") >= 1, lit(1))
+        .otherwise(lit(0))
+    )
+
+    return df.withColumn(
+        "RISK_SCORE", ltv_score + dti_score + delinq_score + derog_score
+    ).withColumn(
+        "RISK_SEGMENT",
+        when(col("RISK_SCORE") < 3, lit("Low Risk"))
+        .when(col("RISK_SCORE") < 5, lit("Medium Risk"))
+        .when(col("RISK_SCORE") < 7, lit("High Risk"))
+        .otherwise(lit("Very High Risk")),
+    )
 
 
 class TestHomeEquityPySpark(unittest.TestCase):
@@ -313,6 +370,52 @@ class TestHomeEquityPySpark(unittest.TestCase):
             for row in dfRisk.select("RISK_SEGMENT").distinct().collect()
         )
         self.assertTrue(actualSegments.issubset(validSegments))
+
+    def test_default_rate_by_segment_matches_sas_baseline(self):
+        """Parity (L8N2-15): PySpark default-rate-by-segment matches the SAS
+        baseline (tests/baselines/risk_segment_default_rate.csv) within
+        tolerance for the rate and exactly for the per-segment row counts."""
+        testDir = os.path.dirname(os.path.abspath(__file__))
+        baselinePath = os.path.join(
+            testDir, "baselines", "risk_segment_default_rate.csv"
+        )
+        with open(baselinePath, newline="") as fh:
+            baseline = {
+                row["RISK_SEGMENT"]: {
+                    "N": int(row["N"]),
+                    "Default_Rate_Pct": float(row["Default_Rate_Pct"]),
+                }
+                for row in csv.DictReader(fh)
+            }
+
+        dfRisk = build_risk_segments(self.df)
+        actual = {
+            row["RISK_SEGMENT"]: row
+            for row in dfRisk.groupBy("RISK_SEGMENT")
+            .agg(
+                count("*").alias("N"),
+                spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct"),
+            )
+            .collect()
+        }
+
+        self.assertEqual(
+            set(actual.keys()),
+            set(baseline.keys()),
+            "Risk segments differ from SAS baseline",
+        )
+        for segment, expected in baseline.items():
+            self.assertEqual(
+                actual[segment]["N"],
+                expected["N"],
+                f"Row count mismatch for segment '{segment}'",
+            )
+            self.assertAlmostEqual(
+                actual[segment]["Default_Rate_Pct"],
+                expected["Default_Rate_Pct"],
+                delta=0.01,
+                msg=f"Default rate mismatch for segment '{segment}'",
+            )
 
     # ------------------------------------------------------------------
     # Test 05: Logistic Regression
