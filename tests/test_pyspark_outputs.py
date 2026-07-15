@@ -4,10 +4,12 @@ Purpose: Validate PySpark transformations against expected outputs
 Ensures correctness of the migrated SAS-to-PySpark logic.
 """
 
-import unittest
+import importlib.util
 import os
+import unittest
+
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit, mean, count
+from pyspark.sql.functions import col, count, lit, mean, sum as spark_sum, when
 
 
 class TestHomeEquityPySpark(unittest.TestCase):
@@ -16,6 +18,19 @@ class TestHomeEquityPySpark(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Create a local SparkSession and load the dataset."""
+        testDir = os.path.dirname(os.path.abspath(__file__))
+        projectRoot = os.path.dirname(testDir)
+        migrationPath = os.path.join(
+            projectRoot, "pyspark", "02_data_cleaning.py"
+        )
+        moduleSpec = importlib.util.spec_from_file_location(
+            "data_cleaning_migration", migrationPath
+        )
+        if moduleSpec is None or moduleSpec.loader is None:
+            raise RuntimeError("Unable to load the data-cleaning migration")
+        cls.dataCleaningMigration = importlib.util.module_from_spec(moduleSpec)
+        moduleSpec.loader.exec_module(cls.dataCleaningMigration)
+
         cls.spark = SparkSession.builder \
             .appName("HomeEquity_Tests") \
             .master("local[*]") \
@@ -24,8 +39,6 @@ class TestHomeEquityPySpark(unittest.TestCase):
             .getOrCreate()
 
         # Determine the data path relative to the project root
-        testDir = os.path.dirname(os.path.abspath(__file__))
-        projectRoot = os.path.dirname(testDir)
         dataPath = os.path.join(projectRoot, "data", "home_equity.csv")
 
         cls.df = cls.spark.read.csv(dataPath, header=True, inferSchema=True)
@@ -137,6 +150,77 @@ class TestHomeEquityPySpark(unittest.TestCase):
         self.assertEqual(
             dfFiltered.filter(col("BAD").isNull()).count(), 0
         )
+
+    def test_data_cleaning_migration_output(self):
+        """Verify the migrated SAS pipeline produces expected datasets."""
+        dfClean, dfFiltered, dfFinal = (
+            self.dataCleaningMigration.transform_home_equity(self.df)
+        )
+
+        self.assertEqual(dfClean.count(), 5960)
+        self.assertEqual(dfFiltered.count(), 5848)
+        self.assertEqual(dfFinal.count(), 5337)
+
+        expectedColumns = {
+            "LTV",
+            "LOAN_OUTCOME",
+            "LOAN_MISS",
+            "MORTDUE_MISS",
+            "VALUE_MISS",
+            "YOJ_MISS",
+            "DEROG_MISS",
+            "DELINQ_MISS",
+            "CLAGE_MISS",
+            "NINQ_MISS",
+        }
+        self.assertTrue(expectedColumns.issubset(set(dfClean.columns)))
+
+        invalidFinalRows = dfFinal.filter(
+            (col("LTV") <= 0)
+            | (col("LTV") >= 5)
+            | (col("LOAN") <= 0)
+            | (col("VALUE") <= 0)
+        ).count()
+        self.assertEqual(invalidFinalRows, 0)
+        self.assertGreater(dfClean.filter(col("CITY") == "Adrian").count(), 0)
+
+    def test_data_cleaning_missing_flags(self):
+        """Verify SAS array-style missing flags match source null counts."""
+        dfClean, _, _ = self.dataCleaningMigration.transform_home_equity(
+            self.df
+        )
+        sourceColumns = [
+            "LOAN",
+            "MORTDUE",
+            "VALUE",
+            "YOJ",
+            "DEROG",
+            "DELINQ",
+            "CLAGE",
+            "NINQ",
+        ]
+        expectedMissing = {
+            "LOAN": 0,
+            "MORTDUE": 518,
+            "VALUE": 112,
+            "YOJ": 515,
+            "DEROG": 708,
+            "DELINQ": 580,
+            "CLAGE": 308,
+            "NINQ": 510,
+        }
+        flagCounts = dfClean.agg(
+            *[
+                spark_sum(col(f"{columnName}_MISS")).alias(columnName)
+                for columnName in sourceColumns
+            ]
+        ).first()
+
+        for columnName in sourceColumns:
+            self.assertEqual(
+                flagCounts[columnName],
+                expectedMissing[columnName],
+            )
 
     # ------------------------------------------------------------------
     # Test 03: Aggregation and Reporting
