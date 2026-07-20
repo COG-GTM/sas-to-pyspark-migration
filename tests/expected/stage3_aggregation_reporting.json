@@ -1,0 +1,406 @@
+{
+  "top_10_states_by_avg_loan": [
+    {
+      "STATE": "Vermont",
+      "num_loans": 11,
+      "avg_loan": 25672.727273,
+      "avg_property_value": 116467.272727,
+      "default_rate": 0.090909
+    },
+    {
+      "STATE": "Rhode Island",
+      "num_loans": 19,
+      "avg_loan": 23557.894737,
+      "avg_property_value": 116219.631579,
+      "default_rate": 0.263158
+    },
+    {
+      "STATE": "Nebraska",
+      "num_loans": 33,
+      "avg_loan": 22106.060606,
+      "avg_property_value": 118060.848485,
+      "default_rate": 0.121212
+    },
+    {
+      "STATE": "Arkansas",
+      "num_loans": 47,
+      "avg_loan": 21444.680851,
+      "avg_property_value": 102673.723404,
+      "default_rate": 0.148936
+    },
+    {
+      "STATE": "Alaska",
+      "num_loans": 13,
+      "avg_loan": 21215.384615,
+      "avg_property_value": 106543.230769,
+      "default_rate": 0.076923
+    },
+    {
+      "STATE": "Delaware",
+      "num_loans": 18,
+      "avg_loan": 20638.888889,
+      "avg_property_value": 97622.055556,
+      "default_rate": 0.277778
+    },
+    {
+      "STATE": "District of Columbia",
+      "num_loans": 12,
+      "avg_loan": 20575.0,
+      "avg_property_value": 95766.75,
+      "default_rate": 0.166667
+    },
+    {
+      "STATE": "South Dakota",
+      "num_loans": 15,
+      "avg_loan": 20406.666667,
+      "avg_property_value": 115230.533333,
+      "default_rate": 0.133333
+    },
+    {
+      "STATE": "Connecticut",
+      "num_loans": 56,
+      "avg_loan": 19894.642857,
+      "avg_property_value": 98450.107143,
+      "default_rate": 0.321429
+    },
+    {
+      "STATE": "Pennsylvania",
+      "num_loans": 207,
+      "avg_loan": 19728.985507,
+      "avg_property_value": 110177.430242,
+      "default_rate": 0.188406
+    }
+  ],
+  "summary_by_loan_outcome": [
+    {
+      "LOAN_OUTCOME": "Default",
+      "stats": {
+        "LOAN": {
+          "n": 997,
+          "mean": 16621.965898,
+          "std": 10944.471425,
+          "min": 1100.0,
+          "median": 14800.0,
+          "max": 77400.0
+        },
+        "MORTDUE": {
+          "n": 997,
+          "mean": 69092.824042,
+          "std": 46498.080062,
+          "min": 2063.0,
+          "median": 60000.0,
+          "max": 399412.0
+        },
+        "VALUE": {
+          "n": 997,
+          "mean": 98876.569017,
+          "std": 58832.977161,
+          "min": 16020.0,
+          "median": 84624.0,
+          "max": 512650.0
+        },
+        "DEBTINC": {
+          "n": 350,
+          "mean": 40.520808,
+          "std": 17.978909,
+          "min": 0.838118,
+          "median": 38.358901,
+          "max": 203.312149
+        }
+      }
+    },
+    {
+      "LOAN_OUTCOME": "Paid",
+      "stats": {
+        "LOAN": {
+          "n": 4340,
+          "mean": 19000.714286,
+          "std": 11019.700641,
+          "min": 1700.0,
+          "median": 16900.0,
+          "max": 89900.0
+        },
+        "MORTDUE": {
+          "n": 4340,
+          "mean": 74199.93632,
+          "std": 42475.338518,
+          "min": 2619.0,
+          "median": 66724.0,
+          "max": 371003.0
+        },
+        "VALUE": {
+          "n": 4340,
+          "mean": 106720.790412,
+          "std": 52819.919525,
+          "min": 12737.0,
+          "median": 94273.0,
+          "max": 471827.0
+        },
+        "DEBTINC": {
+          "n": 3903,
+          "mean": 33.734582,
+          "std": 6.505984,
+          "min": 4.029951,
+          "median": 34.925984,
+          "max": 45.569843
+        }
+      }
+    }
+  ],
+  "summary_by_reason_outcome": [
+    {
+      "REASON": null,
+      "LOAN_OUTCOME": "Default",
+      "stats": {
+        "LOAN": {
+          "n": 32,
+          "mean": 19059.375,
+          "std": 10369.087414,
+          "min": 6000.0,
+          "median": 19750.0,
+          "max": 61400.0
+        },
+        "LTV": {
+          "n": 32,
+          "mean": 0.651807,
+          "std": 0.157744,
+          "min": 0.289744,
+          "median": 0.650187,
+          "max": 0.961651
+        },
+        "DEBTINC": {
+          "n": 9,
+          "mean": 54.253105,
+          "std": 34.976242,
+          "min": 25.202706,
+          "median": 38.94276,
+          "max": 133.52827
+        }
+      }
+    },
+    {
+      "REASON": null,
+      "LOAN_OUTCOME": "Paid",
+      "stats": {
+        "LOAN": {
+          "n": 127,
+          "mean": 16545.669291,
+          "std": 5384.365313,
+          "min": 2000.0,
+          "median": 16600.0,
+          "max": 28600.0
+        },
+        "LTV": {
+          "n": 127,
+          "mean": 0.636475,
+          "std": 0.198954,
+          "min": 0.198486,
+          "median": 0.618964,
+          "max": 1.297285
+        },
+        "DEBTINC": {
+          "n": 113,
+          "mean": 33.217621,
+          "std": 5.414343,
+          "min": 20.181582,
+          "median": 34.118615,
+          "max": 40.660186
+        }
+      }
+    },
+    {
+      "REASON": "DebtCon",
+      "LOAN_OUTCOME": "Default",
+      "stats": {
+        "LOAN": {
+          "n": 655,
+          "mean": 18293.129771,
+          "std": 10172.600596,
+          "min": 2900.0,
+          "median": 16000.0,
+          "max": 76500.0
+        },
+        "LTV": {
+          "n": 655,
+          "mean": 0.700865,
+          "std": 0.169753,
+          "min": 0.073215,
+          "median": 0.724138,
+          "max": 1.751704
+        },
+        "DEBTINC": {
+          "n": 241,
+          "mean": 40.851124,
+          "std": 17.200373,
+          "min": 0.838118,
+          "median": 39.140056,
+          "max": 203.312149
+        }
+      }
+    },
+    {
+      "REASON": "DebtCon",
+      "LOAN_OUTCOME": "Paid",
+      "stats": {
+        "LOAN": {
+          "n": 3010,
+          "mean": 19964.418605,
+          "std": 10456.556843,
+          "min": 3900.0,
+          "median": 18050.0,
+          "max": 89900.0
+        },
+        "LTV": {
+          "n": 3010,
+          "mean": 0.698003,
+          "std": 0.213942,
+          "min": 0.045699,
+          "median": 0.718087,
+          "max": 4.705661
+        },
+        "DEBTINC": {
+          "n": 2705,
+          "mean": 33.960945,
+          "std": 6.384236,
+          "min": 4.029951,
+          "median": 35.18816,
+          "max": 43.920191
+        }
+      }
+    },
+    {
+      "REASON": "HomeImp",
+      "LOAN_OUTCOME": "Default",
+      "stats": {
+        "LOAN": {
+          "n": 310,
+          "mean": 12839.354839,
+          "std": 11635.964206,
+          "min": 1100.0,
+          "median": 10000.0,
+          "max": 77400.0
+        },
+        "LTV": {
+          "n": 310,
+          "mean": 0.668828,
+          "std": 0.205882,
+          "min": 0.020538,
+          "median": 0.710729,
+          "max": 1.231527
+        },
+        "DEBTINC": {
+          "n": 100,
+          "mean": 38.488841,
+          "std": 17.373909,
+          "min": 5.762995,
+          "median": 36.36826,
+          "max": 143.949605
+        }
+      }
+    },
+    {
+      "REASON": "HomeImp",
+      "LOAN_OUTCOME": "Paid",
+      "stats": {
+        "LOAN": {
+          "n": 1203,
+          "mean": 16848.628429,
+          "std": 12409.84008,
+          "min": 1700.0,
+          "median": 13600.0,
+          "max": 82200.0
+        },
+        "LTV": {
+          "n": 1203,
+          "mean": 0.671697,
+          "std": 0.205751,
+          "min": 0.051914,
+          "median": 0.725618,
+          "max": 1.052387
+        },
+        "DEBTINC": {
+          "n": 1085,
+          "mean": 33.224079,
+          "std": 6.873758,
+          "min": 12.846006,
+          "median": 34.386231,
+          "max": 45.569843
+        }
+      }
+    }
+  ],
+  "frequency_tables": {
+    "JOB": [
+      {
+        "value": "Other",
+        "count": 2070
+      },
+      {
+        "value": "ProfExe",
+        "count": 1242
+      },
+      {
+        "value": "Office",
+        "count": 871
+      },
+      {
+        "value": "Mgr",
+        "count": 704
+      },
+      {
+        "value": "Self",
+        "count": 176
+      },
+      {
+        "value": "(missing)",
+        "count": 176
+      },
+      {
+        "value": "Sales",
+        "count": 98
+      }
+    ],
+    "REASON": [
+      {
+        "value": "DebtCon",
+        "count": 3665
+      },
+      {
+        "value": "HomeImp",
+        "count": 1513
+      },
+      {
+        "value": "(missing)",
+        "count": 159
+      }
+    ],
+    "LOAN_OUTCOME": [
+      {
+        "value": "Paid",
+        "count": 4340
+      },
+      {
+        "value": "Default",
+        "count": 997
+      }
+    ],
+    "REGION": [
+      {
+        "value": "South",
+        "count": 2039
+      },
+      {
+        "value": "West",
+        "count": 1266
+      },
+      {
+        "value": "Midwest",
+        "count": 1112
+      },
+      {
+        "value": "Northeast",
+        "count": 920
+      }
+    ]
+  }
+}

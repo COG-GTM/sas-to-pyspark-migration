@@ -1,0 +1,17 @@
+{
+  "sas_model_data_count": 3881,
+  "pyspark_reference_model_data_count": 3532,
+  "train_count": 2528,
+  "valid_count": 1004,
+  "reference_auc": 0.805246,
+  "reference_confusion_matrix": {
+    "actual_0_pred_0": 907,
+    "actual_0_pred_1": 2,
+    "actual_1_pred_0": 80,
+    "actual_1_pred_1": 15
+  },
+  "tolerances": {
+    "auc_abs": 0.05,
+    "note": "SAS SELECTION=STEPWISE maps to PySpark elasticNet, so metrics are not bit-identical. AUC within +/-0.05; confusion-matrix cell counts are approximate (depend on split/Spark version)."
+  }
+}

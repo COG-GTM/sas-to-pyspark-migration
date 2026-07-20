@@ -1,0 +1,69 @@
+{
+  "counts": {
+    "raw": 5960,
+    "after_filter_loan_value_bad_notnull": 5848,
+    "final_after_ltv_loan_value_positive": 5337
+  },
+  "loan_outcome_counts": [
+    {
+      "value": "Paid",
+      "count": 4340
+    },
+    {
+      "value": "Default",
+      "count": 997
+    }
+  ],
+  "sample_ltv": [
+    {
+      "MORTDUE": 2063.0,
+      "VALUE": 100448.0,
+      "LTV": 0.020538
+    },
+    {
+      "MORTDUE": 2619.0,
+      "VALUE": 57310.0,
+      "LTV": 0.045699
+    },
+    {
+      "MORTDUE": 2800.0,
+      "VALUE": 18361.0,
+      "LTV": 0.152497
+    },
+    {
+      "MORTDUE": 3372.0,
+      "VALUE": 41500.0,
+      "LTV": 0.081253
+    },
+    {
+      "MORTDUE": 4000.0,
+      "VALUE": 60850.0,
+      "LTV": 0.065735
+    },
+    {
+      "MORTDUE": 4447.0,
+      "VALUE": 21510.0,
+      "LTV": 0.206741
+    },
+    {
+      "MORTDUE": 4641.0,
+      "VALUE": 23636.0,
+      "LTV": 0.196353
+    },
+    {
+      "MORTDUE": 4734.0,
+      "VALUE": 55500.0,
+      "LTV": 0.085297
+    },
+    {
+      "MORTDUE": 4810.0,
+      "VALUE": 88000.0,
+      "LTV": 0.054659
+    },
+    {
+      "MORTDUE": 4927.0,
+      "VALUE": 30198.0,
+      "LTV": 0.163157
+    }
+  ]
+}
