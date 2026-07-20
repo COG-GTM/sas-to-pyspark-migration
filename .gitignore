@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Test / coverage / cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# PySpark / Spark local artifacts
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Virtual environments
+.venv/
+venv/
+env/
