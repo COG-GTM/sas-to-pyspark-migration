@@ -11,4 +11,4 @@ chispa==0.10.1        # DataFrame-comparison helper for parity assertions
 
 # Linting / formatting
 flake8==7.1.1
-black==24.10.0
+black==24.8.0        # last release supporting Python 3.8 (CI matrix)
