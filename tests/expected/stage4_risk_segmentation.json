@@ -1,0 +1,116 @@
+{
+  "risk_score_range": {
+    "min": 0.0,
+    "max": 9.0
+  },
+  "risk_segment_counts": [
+    {
+      "value": "Low Risk",
+      "count": 3118
+    },
+    {
+      "value": "Medium Risk",
+      "count": 1776
+    },
+    {
+      "value": "High Risk",
+      "count": 427
+    },
+    {
+      "value": "Very High Risk",
+      "count": 16
+    }
+  ],
+  "ltv_risk_cat_counts": [
+    {
+      "value": "Medium",
+      "count": 2967
+    },
+    {
+      "value": "High",
+      "count": 1239
+    },
+    {
+      "value": "Low",
+      "count": 1131
+    }
+  ],
+  "dti_risk_cat_counts": [
+    {
+      "value": "Medium",
+      "count": 2293
+    },
+    {
+      "value": "Low",
+      "count": 1122
+    },
+    {
+      "value": "(missing)",
+      "count": 1084
+    },
+    {
+      "value": "High",
+      "count": 796
+    },
+    {
+      "value": "Very High",
+      "count": 42
+    }
+  ],
+  "delinq_risk_cat_counts": [
+    {
+      "value": "None",
+      "count": 3872
+    },
+    {
+      "value": "Low",
+      "count": 598
+    },
+    {
+      "value": "(missing)",
+      "count": 390
+    },
+    {
+      "value": "Medium",
+      "count": 332
+    },
+    {
+      "value": "High",
+      "count": 145
+    }
+  ],
+  "default_rate_by_segment": [
+    {
+      "RISK_SEGMENT": "High Risk",
+      "n": 427,
+      "default_rate": 0.283372,
+      "avg_loan": 14481.264637,
+      "avg_ltv": 0.876325,
+      "avg_debtinc": 40.591658
+    },
+    {
+      "RISK_SEGMENT": "Low Risk",
+      "n": 3118,
+      "default_rate": 0.152341,
+      "avg_loan": 20244.291212,
+      "avg_ltv": 0.612748,
+      "avg_debtinc": 32.071937
+    },
+    {
+      "RISK_SEGMENT": "Medium Risk",
+      "n": 1776,
+      "default_rate": 0.216779,
+      "avg_loan": 16580.461712,
+      "avg_ltv": 0.774845,
+      "avg_debtinc": 36.004819
+    },
+    {
+      "RISK_SEGMENT": "Very High Risk",
+      "n": 16,
+      "default_rate": 1.0,
+      "avg_loan": 17693.75,
+      "avg_ltv": 1.016991,
+      "avg_debtinc": 65.777268
+    }
+  ]
+}

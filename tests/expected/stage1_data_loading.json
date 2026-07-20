@@ -1,0 +1,96 @@
+{
+  "row_count": 5960,
+  "column_count": 18,
+  "columns": [
+    {
+      "name": "BAD",
+      "type": "int",
+      "nullable": true
+    },
+    {
+      "name": "LOAN",
+      "type": "int",
+      "nullable": true
+    },
+    {
+      "name": "MORTDUE",
+      "type": "double",
+      "nullable": true
+    },
+    {
+      "name": "VALUE",
+      "type": "double",
+      "nullable": true
+    },
+    {
+      "name": "REASON",
+      "type": "string",
+      "nullable": true
+    },
+    {
+      "name": "JOB",
+      "type": "string",
+      "nullable": true
+    },
+    {
+      "name": "YOJ",
+      "type": "double",
+      "nullable": true
+    },
+    {
+      "name": "DEROG",
+      "type": "int",
+      "nullable": true
+    },
+    {
+      "name": "DELINQ",
+      "type": "int",
+      "nullable": true
+    },
+    {
+      "name": "CLAGE",
+      "type": "double",
+      "nullable": true
+    },
+    {
+      "name": "NINQ",
+      "type": "int",
+      "nullable": true
+    },
+    {
+      "name": "CLNO",
+      "type": "int",
+      "nullable": true
+    },
+    {
+      "name": "DEBTINC",
+      "type": "double",
+      "nullable": true
+    },
+    {
+      "name": "APPDATE",
+      "type": "int",
+      "nullable": true
+    },
+    {
+      "name": "CITY",
+      "type": "string",
+      "nullable": true
+    },
+    {
+      "name": "STATE",
+      "type": "string",
+      "nullable": true
+    },
+    {
+      "name": "DIVISION",
+      "type": "string",
+      "nullable": true
+    },
+    {
+      "name": "REGION",
+      "type": "string",
+      "nullable": true
+    }
+  ]
+}
