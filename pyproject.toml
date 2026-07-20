@@ -1,0 +1,16 @@
+[tool.black]
+line-length = 100
+target-version = ["py38", "py311"]
+# The stage scripts under pyspark/ are intentionally left untouched during the
+# scaffolding phase (they are migrated/reformatted in later per-stage PRs), so
+# they are excluded from formatting for now.
+extend-exclude = '''
+/(
+  pyspark
+)/
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v -ra"
