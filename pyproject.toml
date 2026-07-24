@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sas-to-pyspark-migration"
+version = "0.1.0"
+description = "Demo migrating legacy SAS financial workflows to PySpark on a home equity loan dataset."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+# Keep this pin in sync with requirements.txt.
+dependencies = [
+    "pyspark==3.5.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
