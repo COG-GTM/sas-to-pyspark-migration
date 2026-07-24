@@ -74,15 +74,17 @@ def _banner(text):
 # ==================================================================
 _banner("Frequency Tables (PROC FREQ): JOB, REASON, LOAN_OUTCOME, REGION")
 
-total_rows = home_equity_final.count()
 for cat_col in ["JOB", "REASON", "LOAN_OUTCOME", "REGION"]:
     print(f"\n--- {cat_col} ---")
-    home_equity_final \
-        .filter(col(cat_col).isNotNull()) \
+    # SAS PROC FREQ excludes missing values and reports Percent over the
+    # non-missing total, so percentages sum to 100 over the shown levels.
+    col_df = home_equity_final.filter(col(cat_col).isNotNull())
+    col_total = col_df.count()
+    col_df \
         .groupBy(cat_col) \
         .agg(
             count(lit(1)).alias("Frequency"),
-            spark_round(count(lit(1)) / lit(total_rows) * 100, 2).alias("Percent"),
+            spark_round(count(lit(1)) / lit(col_total) * 100, 2).alias("Percent"),
         ) \
         .orderBy(col(cat_col).asc()) \
         .show(truncate=False)
@@ -109,9 +111,10 @@ def proc_means(source: DataFrame, class_cols, var_cols) -> DataFrame:
         non_null = non_null.filter(col(c).isNotNull())
 
     per_var = []
-    for v in var_cols:
+    for var_pos, v in enumerate(var_cols):
         per_var.append(
             non_null.groupBy(*class_cols).agg(
+                lit(var_pos).alias("_var_pos"),
                 lit(v).alias("Variable"),
                 count(col(v)).alias("N"),
                 spark_round(mean(col(v)), 2).alias("Mean"),
@@ -125,7 +128,8 @@ def proc_means(source: DataFrame, class_cols, var_cols) -> DataFrame:
     combined = per_var[0]
     for part in per_var[1:]:
         combined = combined.unionByName(part)
-    return combined.orderBy(*class_cols, "Variable")
+    # Keep the SAS VAR-statement order (not alphabetical) within each class level.
+    return combined.orderBy(*class_cols, "_var_pos").drop("_var_pos")
 
 
 _banner("Summary Statistics by Loan Outcome (PROC MEANS)")
