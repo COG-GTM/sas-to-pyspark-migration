@@ -2,266 +2,209 @@
 PySpark Script: 05_logistic_regression.py
 Purpose: Build a logistic regression model for loan default prediction
 Equivalent SAS Program: sas/05_logistic_regression.sas
+
+Migrates PROC LOGISTIC (CLASS statement + stepwise selection, ROC/AUC) to an
+idiomatic pyspark.ml Pipeline:
+  StringIndexer + OneHotEncoder (CLASS vars) -> VectorAssembler -> LogisticRegression
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit
-from pyspark.ml.feature import (
-    VectorAssembler, StringIndexer, OneHotEncoder
+from pyspark.sql.functions import (
+    col, count, mean, stddev, min as spark_min, max as spark_max,
+    expr, round as spark_round
 )
-from pyspark.ml.classification import LogisticRegression
 from pyspark.ml import Pipeline
+from pyspark.ml.functions import vector_to_array
+from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
+from pyspark.ml.classification import LogisticRegression
 from pyspark.ml.evaluation import (
     BinaryClassificationEvaluator,
-    MulticlassClassificationEvaluator
+    MulticlassClassificationEvaluator,
 )
 
-# Initialize SparkSession
+# Initialize SparkSession (self-contained, no shared helper module)
 spark = SparkSession.builder \
     .appName("HomeEquity_LogisticRegression") \
     .master("local[*]") \
     .getOrCreate()
 
-# Load and prepare data (replicate cleaning from scripts 02/04)
-df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
-df = df \
-    .withColumn(
-        "LTV",
-        when(
-            (col("VALUE").isNotNull()) & (col("MORTDUE").isNotNull()) & (col("VALUE") > 0),
-            col("MORTDUE") / col("VALUE")
-        )
-    ) \
-    .filter(
-        col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull() &
-        (col("LOAN") > 0) & (col("VALUE") > 0)
-    )
+# Model predictors (numeric + categorical CLASS variables)
+NUMERIC_FEATURES = [
+    "LOAN", "MORTDUE", "VALUE", "DEBTINC",
+    "DELINQ", "DEROG", "CLAGE", "NINQ",
+]
+CATEGORICAL_FEATURES = ["JOB", "REASON"]
 
 # ------------------------------------------------------------------
-# Step 1: Prepare modeling dataset - remove records with excessive missing
+# Step 1: Prepare the modeling dataset
 # SAS equivalent:
 #   data work.model_data;
 #       set work.home_equity_risk;
 #       if LOAN ne . and MORTDUE ne . and VALUE ne .
 #          and DEBTINC ne . and DELINQ ne . and CLAGE ne .;
 #   run;
+# PROC LOGISTIC additionally drops rows missing any other model variable, so we
+# keep complete cases across every predictor. BAD becomes the ML label.
 # ------------------------------------------------------------------
-modelData = df.filter(
-    col("LOAN").isNotNull() &
-    col("MORTDUE").isNotNull() &
-    col("VALUE").isNotNull() &
-    col("DEBTINC").isNotNull() &
-    col("DELINQ").isNotNull() &
-    col("CLAGE").isNotNull() &
-    col("DEROG").isNotNull() &
-    col("NINQ").isNotNull() &
-    col("JOB").isNotNull() &
-    col("REASON").isNotNull()
-)
+df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
 
-# Cast BAD to double for ML
+modelData = df
+for c in NUMERIC_FEATURES + CATEGORICAL_FEATURES + ["BAD"]:
+    modelData = modelData.filter(col(c).isNotNull())
+
 modelData = modelData.withColumn("label", col("BAD").cast("double"))
-
 print(f"Modeling dataset size: {modelData.count()} rows")
 
 # ------------------------------------------------------------------
-# Step 2: Split into training (70%) and validation (30%)
+# Step 2: Train/validation split (70/30, fixed seed)
 # SAS equivalent:
-#   proc surveyselect data=work.model_data
-#       out=work.model_split method=srs samprate=0.7 seed=42;
-#   run;
+#   proc surveyselect data=work.model_data method=srs samprate=0.7 seed=42;
 # ------------------------------------------------------------------
 train, valid = modelData.randomSplit([0.7, 0.3], seed=42)
-print(f"Training set: {train.count()} rows")
+print(f"Training set:   {train.count()} rows")
 print(f"Validation set: {valid.count()} rows")
 
 # ------------------------------------------------------------------
-# Step 3: Build ML pipeline
+# Step 3: Build the ML pipeline
 # SAS equivalent:
 #   proc logistic data=work.train descending;
 #       class JOB(ref='Other') REASON(ref='HomeImp') / param=ref;
-#       model BAD = LOAN MORTDUE VALUE DEBTINC DELINQ DEROG CLAGE NINQ
-#                   JOB REASON
-#                 / selection=stepwise;
-#       output out=work.train_scored predicted=pred_prob;
+#       model BAD = LOAN MORTDUE VALUE DEBTINC DELINQ DEROG CLAGE NINQ JOB REASON
+#             / selection=stepwise;
 #   run;
 #
-# PySpark uses a Pipeline with StringIndexer, OneHotEncoder,
-# VectorAssembler, and LogisticRegression.
+# CLASS statement       -> StringIndexer + OneHotEncoder (param=ref reference coding)
+# selection=stepwise    -> ElasticNet (L1) regularization for feature sparsity
 # ------------------------------------------------------------------
-
-# Index categorical variables (equivalent to CLASS statement)
-jobIndexer = StringIndexer(
-    inputCol="JOB", outputCol="JOB_IDX", handleInvalid="keep"
-)
-reasonIndexer = StringIndexer(
-    inputCol="REASON", outputCol="REASON_IDX", handleInvalid="keep"
-)
-
-# One-hot encode categorical variables (equivalent to param=ref)
-jobEncoder = OneHotEncoder(
-    inputCol="JOB_IDX", outputCol="JOB_VEC"
-)
-reasonEncoder = OneHotEncoder(
-    inputCol="REASON_IDX", outputCol="REASON_VEC"
-)
-
-# Numeric feature columns
-numericFeatures = [
-    "LOAN", "MORTDUE", "VALUE", "DEBTINC",
-    "DELINQ", "DEROG", "CLAGE", "NINQ"
+indexers = [
+    StringIndexer(inputCol=c, outputCol=f"{c}_IDX", handleInvalid="keep")
+    for c in CATEGORICAL_FEATURES
+]
+encoders = [
+    OneHotEncoder(inputCol=f"{c}_IDX", outputCol=f"{c}_VEC")
+    for c in CATEGORICAL_FEATURES
 ]
 
-# Assemble all features into a single vector
 assembler = VectorAssembler(
-    inputCols=numericFeatures + ["JOB_VEC", "REASON_VEC"],
-    outputCol="features"
+    inputCols=NUMERIC_FEATURES + [f"{c}_VEC" for c in CATEGORICAL_FEATURES],
+    outputCol="features",
 )
 
-# Logistic regression model
-# SAS equivalent: PROC LOGISTIC with selection=stepwise
-# Note: PySpark's LogisticRegression uses elasticNet for regularization
-# which provides built-in feature selection similar to stepwise
 lr = LogisticRegression(
     featuresCol="features",
     labelCol="label",
     maxIter=100,
     regParam=0.01,
-    elasticNetParam=0.8,  # L1 ratio for feature sparsity (like stepwise)
-    threshold=0.5
+    elasticNetParam=0.8,  # L1-heavy: drives weak coefficients to 0 (like stepwise)
 )
 
-# Build the pipeline
-pipeline = Pipeline(stages=[
-    jobIndexer, reasonIndexer,
-    jobEncoder, reasonEncoder,
-    assembler, lr
-])
+pipeline = Pipeline(stages=indexers + encoders + [assembler, lr])
 
 # ------------------------------------------------------------------
-# Step 4: Train the model
+# Step 4: Fit the model and report coefficients
 # ------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("Training Logistic Regression Model")
 print("=" * 60)
 
 model = pipeline.fit(train)
-
-# Extract the logistic regression model from the pipeline
 lrModel = model.stages[-1]
 
-# Display model coefficients
+# Recover assembled feature names from the vector's ML metadata so each
+# coefficient is labeled with the predictor it belongs to.
+featureAttrs = (
+    model.transform(train.limit(1))
+    .schema["features"]
+    .metadata["ml_attr"]["attrs"]
+)
+featureNames = [None] * len(lrModel.coefficients)
+for attrs in featureAttrs.values():
+    for attr in attrs:
+        featureNames[attr["idx"]] = attr["name"]
+
 print(f"\nIntercept: {lrModel.intercept:.4f}")
 print(f"Number of features: {len(lrModel.coefficients)}")
-print(f"\nCoefficients (non-zero):")
-featureNames = numericFeatures + ["JOB_VEC", "REASON_VEC"]
-for i, coef in enumerate(lrModel.coefficients):
-    if abs(coef) > 0.0001:
-        print(f"  Feature {i}: {coef:.6f}")
+print("\nCoefficients:")
+for name, coef in zip(featureNames, lrModel.coefficients):
+    marker = "" if abs(coef) > 1e-6 else "   (dropped by L1)"
+    print(f"  {name:<24} {coef: .6f}{marker}")
 
 # ------------------------------------------------------------------
-# Step 5: Score the validation dataset
+# Step 5: Score the validation set
 # SAS equivalent:
 #   proc plm restore=work.logit_model;
-#       score data=work.valid out=work.valid_scored predicted=pred_prob;
+#       score data=work.valid out=work.valid_scored predicted=pred_prob / ilink;
 #   run;
 # ------------------------------------------------------------------
-predictions = model.transform(valid)
+# Probability of default (class 1) as an explicit column, like SAS pred_prob.
+# probability is an ML vector, so convert to an array before indexing.
+predictions = model.transform(valid).withColumn(
+    "pred_prob", vector_to_array(col("probability"))[1]
+)
 
 # ------------------------------------------------------------------
-# Step 6: Create confusion matrix
+# Step 6: Confusion matrix
 # SAS equivalent:
-#   data work.valid_scored;
-#       if pred_prob >= 0.5 then PREDICTED_BAD = 1;
-#       else PREDICTED_BAD = 0;
-#   run;
-#   proc freq data=work.valid_scored;
-#       tables BAD * PREDICTED_BAD;
-#   run;
+#   data work.valid_scored; if pred_prob >= 0.5 then PREDICTED_BAD=1; ...
+#   proc freq data=work.valid_scored; tables BAD * PREDICTED_BAD; run;
 # ------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("Confusion Matrix - Validation Set")
-print("(equivalent to PROC FREQ tables BAD * PREDICTED_BAD)")
+print("(rows = actual BAD, cols = predicted)")
 print("=" * 60)
 
 predictions.groupBy("label", "prediction") \
-    .count() \
+    .agg(count("*").alias("n")) \
     .orderBy("label", "prediction") \
     .show()
 
 # ------------------------------------------------------------------
-# Step 7: Calculate model performance metrics
+# Step 7: Model performance metrics
 # SAS equivalent:
-#   proc logistic ... ;
-#       roc;
-#       ods output Association=work.association_stats;
-#   run;
+#   proc logistic ...; roc; ods output Association=...; (concordance / c statistic)
 # ------------------------------------------------------------------
 print("=" * 60)
 print("Model Performance Metrics")
-print("(equivalent to PROC LOGISTIC concordance/AUC)")
 print("=" * 60)
 
-# AUC - Area Under ROC Curve
-# SAS equivalent: c statistic / concordance
-binaryEval = BinaryClassificationEvaluator(
-    labelCol="label",
-    rawPredictionCol="rawPrediction",
-    metricName="areaUnderROC"
-)
-auc = binaryEval.evaluate(predictions)
-print(f"\nAUC (Area Under ROC): {auc:.4f}")
+auc = BinaryClassificationEvaluator(
+    labelCol="label", rawPredictionCol="rawPrediction", metricName="areaUnderROC"
+).evaluate(predictions)
+aupr = BinaryClassificationEvaluator(
+    labelCol="label", rawPredictionCol="rawPrediction", metricName="areaUnderPR"
+).evaluate(predictions)
+print(f"\nAUC (Area Under ROC): {auc:.4f}   # SAS c statistic / concordance")
+print(f"AUPR (Area Under PR): {aupr:.4f}")
 
-# Area Under PR Curve
-binaryEvalPr = BinaryClassificationEvaluator(
-    labelCol="label",
-    rawPredictionCol="rawPrediction",
-    metricName="areaUnderPR"
-)
-aupr = binaryEvalPr.evaluate(predictions)
-print(f"AUPR (Area Under PR Curve): {aupr:.4f}")
-
-# Accuracy, Precision, Recall, F1
-multiEval = MulticlassClassificationEvaluator(
-    labelCol="label",
-    predictionCol="prediction"
-)
-
+multiEval = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction")
 for metricName in ["accuracy", "weightedPrecision", "weightedRecall", "f1"]:
-    multiEval.setMetricName(metricName)
-    value = multiEval.evaluate(predictions)
+    value = multiEval.setMetricName(metricName).evaluate(predictions)
     print(f"{metricName}: {value:.4f}")
 
 # ------------------------------------------------------------------
-# Step 8: Score distribution by actual outcome
+# Step 8: Predicted probability distribution by actual outcome
 # SAS equivalent:
 #   proc means data=work.valid_scored n mean std min p25 median p75 max;
-#       class BAD;
-#       var pred_prob;
+#       class BAD; var pred_prob;
 #   run;
+#
+# NOTE: use explicit column aggregations. A dict like
+#   .agg({"pred_prob": "count", "pred_prob": "mean"})
+# would silently drop the "count" (duplicate dict key), keeping only the mean.
 # ------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("Predicted Probability Distribution by Actual Outcome")
 print("=" * 60)
 
-# Extract probability of default (class 1)
-from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
+predictions.groupBy("label").agg(
+    count("pred_prob").alias("n"),
+    spark_round(mean("pred_prob"), 4).alias("mean_prob"),
+    spark_round(stddev("pred_prob"), 4).alias("std_prob"),
+    spark_round(spark_min("pred_prob"), 4).alias("min_prob"),
+    spark_round(expr("percentile_approx(pred_prob, 0.25)"), 4).alias("p25_prob"),
+    spark_round(expr("percentile_approx(pred_prob, 0.50)"), 4).alias("median_prob"),
+    spark_round(expr("percentile_approx(pred_prob, 0.75)"), 4).alias("p75_prob"),
+    spark_round(spark_max("pred_prob"), 4).alias("max_prob"),
+).orderBy("label").show()
 
-extractProb = udf(lambda v: float(v[1]), DoubleType())
-predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
-
-predictions.groupBy("label") \
-    .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
-    ) \
-    .show()
-
-# Detailed statistics
-for labelVal in [0.0, 1.0]:
-    subset = predictions.filter(col("label") == labelVal)
-    print(f"\nActual BAD = {int(labelVal)}:")
-    subset.select("pred_prob").describe().show()
-
-# Clean up
 spark.stop()
