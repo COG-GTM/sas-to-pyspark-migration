@@ -57,12 +57,48 @@ The [`migration_guide/`](migration_guide/) folder contains detailed reference do
 ### Prerequisites
 
 - Python 3.8+
-- Java 8 or 11 (required by PySpark)
+- Java 8, 11, or 17 (required by PySpark 3.5.x)
+
+PySpark launches a JVM, so a compatible JDK must be discoverable. PySpark honors
+`JAVA_HOME` first (falling back to `java` on your `PATH`). Newer JDKs (e.g. 21+)
+are **not** supported by PySpark 3.5.x and will fail with errors such as
+`getSubject is not supported`. Point `JAVA_HOME` at a supported JDK:
+
+```bash
+# Example (Linux): use Java 17
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+java -version   # should report 1.8, 11, or 17
+```
 
 ### Installation
 
+Install the pinned dependencies from `requirements.txt`:
+
 ```bash
-pip install pyspark
+pip install -r requirements.txt
+```
+
+### Using the shared SparkSession helper
+
+Scripts should obtain their SparkSession from the shared
+[`pyspark/common/spark_session.py`](pyspark/common/spark_session.py) helper
+instead of duplicating the `SparkSession.builder...getOrCreate()` boilerplate.
+Run from the repository root so the import (and the `data/` path) resolve:
+
+```python
+from pyspark.common.spark_session import get_spark
+
+spark = get_spark("HomeEquity_DataLoading")
+df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
+# ... transformations ...
+spark.stop()
+```
+
+Quick check that the helper and your Java setup work:
+
+```bash
+# From the repository root
+python -c "from pyspark.common.spark_session import get_spark; s=get_spark('smoke'); print(s.version); s.stop()"
 ```
 
 ### Running the PySpark Scripts

@@ -1,0 +1,3 @@
+# Runtime dependencies for the SAS-to-PySpark migration demo.
+# Pinned to a stable 3.5.x release; keep in sync with pyproject.toml.
+pyspark==3.5.1
