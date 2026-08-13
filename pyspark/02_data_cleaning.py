@@ -14,7 +14,19 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 # Load data
+# SAS equivalent: set work.home_equity (created in 01_data_loading.sas)
 df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
+
+# SAS LABEL / FORMAT statements have no PySpark equivalent.
+# Document the derived-column labels as metadata instead.
+# SAS equivalent:
+#   label LTV = "Loan to Value Ratio"
+#         LOAN_OUTCOME = "Loan Outcome";
+#   format LTV percent8.2;
+derivedColumnLabels = {
+    "LTV": "Loan to Value Ratio",
+    "LOAN_OUTCOME": "Loan Outcome",
+}
 
 # ------------------------------------------------------------------
 # Step 1: Create derived columns
@@ -42,11 +54,16 @@ dfClean = df \
         "LOAN_OUTCOME",
         when(col("BAD") == 0, lit("Paid"))
         .when(col("BAD") == 1, lit("Default"))
+        .otherwise(lit(""))
     ) \
     .withColumn(
         "CITY",
         initcap(col("CITY"))  # SAS equivalent: propcase(CITY)
     )
+
+print("Derived column labels (SAS-style variable labels):")
+for colName, label in derivedColumnLabels.items():
+    print(f"  {colName:12s} -> {label}")
 
 # ------------------------------------------------------------------
 # Step 2: Flag missing values
@@ -99,7 +116,9 @@ dfFiltered.select(
 
 # Approximate percentiles for key variables
 print("Approximate Percentiles:")
-for quantileCol in ["LOAN", "MORTDUE", "VALUE", "LTV", "DEBTINC"]:
+for quantileCol in [
+    "LOAN", "MORTDUE", "VALUE", "DEBTINC", "LTV", "CLAGE", "DEROG", "DELINQ"
+]:
     quantiles = dfFiltered.approxQuantile(
         quantileCol, [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99], 0.01
     )
