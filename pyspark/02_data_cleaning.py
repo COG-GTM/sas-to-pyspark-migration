@@ -40,8 +40,18 @@ df = spark.read.csv(
 #       else if BAD = 1 then LOAN_OUTCOME = 'Default';
 #       else LOAN_OUTCOME = '';
 #       CITY = propcase(CITY);
+#       label LTV = "Loan to Value Ratio"
+#             LOAN_OUTCOME = "Loan Outcome";
 #   run;
+#
+# Note: PySpark does not have native column labels like SAS, so the new
+# labels are documented in a dictionary (same approach as 01_data_loading.py).
 # ------------------------------------------------------------------
+derivedColumnLabels = {
+    "LTV": "Loan to Value Ratio",
+    "LOAN_OUTCOME": "Loan Outcome",
+}
+
 dfClean = df.withColumn(
     "LTV",
     when(
@@ -49,11 +59,12 @@ dfClean = df.withColumn(
         (col("MORTDUE").isNotNull()) &
         (col("VALUE") > 0),
         col("MORTDUE") / col("VALUE")
-    )
+    ).otherwise(lit(None))
 ).withColumn(
     "LOAN_OUTCOME",
     when(col("BAD") == 0, lit("Paid"))
     .when(col("BAD") == 1, lit("Default"))
+    .otherwise(lit(""))
 ).withColumn(
     "CITY",
     initcap(col("CITY"))
@@ -62,6 +73,9 @@ dfClean = df.withColumn(
 print("=" * 60)
 print("Step 1: Derived Columns (LTV, LOAN_OUTCOME, proper-case CITY)")
 print("=" * 60)
+for derivedColumn, label in derivedColumnLabels.items():
+    print(f"  {derivedColumn:12s} -> {label}")
+
 dfClean.select(
     "BAD", "MORTDUE", "VALUE", "LTV", "LOAN_OUTCOME", "CITY"
 ).show(10, truncate=False)
