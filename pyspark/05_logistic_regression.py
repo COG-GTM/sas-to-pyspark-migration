@@ -4,8 +4,14 @@ Purpose: Build a logistic regression model for loan default prediction
 Equivalent SAS Program: sas/05_logistic_regression.sas
 """
 
+from bisect import bisect_left, bisect_right
+
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit
+from pyspark.sql.functions import (
+    col, when, lit, count, mean, stddev, min as spark_min,
+    max as spark_max, expr, round as spark_round
+)
+from pyspark.ml.functions import vector_to_array
 from pyspark.ml.feature import (
     VectorAssembler, StringIndexer, OneHotEncoder
 )
@@ -76,14 +82,16 @@ print(f"Training set: {train.count()} rows")
 print(f"Validation set: {valid.count()} rows")
 
 # ------------------------------------------------------------------
-# Step 3: Build ML pipeline
+# Step 3: Fit logistic regression with stepwise selection
 # SAS equivalent:
 #   proc logistic data=work.train descending;
 #       class JOB(ref='Other') REASON(ref='HomeImp') / param=ref;
 #       model BAD = LOAN MORTDUE VALUE DEBTINC DELINQ DEROG CLAGE NINQ
 #                   JOB REASON
-#                 / selection=stepwise;
+#                 / selection=stepwise slentry=0.05 slstay=0.05
+#                   details lackfit;
 #       output out=work.train_scored predicted=pred_prob;
+#       store work.logit_model;
 #   run;
 #
 # PySpark uses a Pipeline with StringIndexer, OneHotEncoder,
@@ -138,59 +146,109 @@ pipeline = Pipeline(stages=[
     assembler, lr
 ])
 
-# ------------------------------------------------------------------
-# Step 4: Train the model
-# ------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("Training Logistic Regression Model")
 print("=" * 60)
 
 model = pipeline.fit(train)
 
-# Extract the logistic regression model from the pipeline
+# Extract the fitted stages from the pipeline
+jobIndexerModel = model.stages[0]
+reasonIndexerModel = model.stages[1]
 lrModel = model.stages[-1]
 
-# Display model coefficients
+# Feature names in assembler order: numerics, then the one-hot dummy
+# columns for each CLASS variable (handleInvalid="keep" reserves the
+# trailing slot that OneHotEncoder drops, so every observed level keeps
+# a dummy column)
+featureNames = (
+    numericFeatures +
+    [f"JOB_{lbl}" for lbl in jobIndexerModel.labels] +
+    [f"REASON_{lbl}" for lbl in reasonIndexerModel.labels]
+)
+
+# Display model coefficients (equivalent to the PROC LOGISTIC
+# parameter estimates table; L1 regularization zeroes out weak
+# predictors, playing the role of stepwise selection)
 print(f"\nIntercept: {lrModel.intercept:.4f}")
 print(f"Number of features: {len(lrModel.coefficients)}")
-print(f"\nCoefficients (non-zero):")
-featureNames = numericFeatures + ["JOB_VEC", "REASON_VEC"]
+print("\nCoefficients (non-zero - variables retained by selection):")
 for i, coef in enumerate(lrModel.coefficients):
     if abs(coef) > 0.0001:
-        print(f"  Feature {i}: {coef:.6f}")
+        name = featureNames[i] if i < len(featureNames) else f"Feature {i}"
+        print(f"  {name}: {coef:.6f}")
+
+print("\nVariables dropped by selection (zero coefficient):")
+droppedFeatures = [
+    featureNames[i] if i < len(featureNames) else f"Feature {i}"
+    for i, coef in enumerate(lrModel.coefficients)
+    if abs(coef) <= 0.0001
+]
+print(f"  {droppedFeatures if droppedFeatures else 'None'}")
+
+# Training-set scores
+# SAS equivalent: output out=work.train_scored predicted=pred_prob;
+trainScored = model.transform(train) \
+    .withColumn("pred_prob", vector_to_array(col("probability"))[1])
+
+print("\nTraining set scores (work.train_scored) - first 5 rows:")
+trainScored.select("BAD", "pred_prob").show(5)
+
+# Goodness-of-fit check on the training data
+# SAS equivalent: the LACKFIT (Hosmer-Lemeshow) option; PySpark has no
+# direct equivalent, so compare observed vs predicted default rates
+print("Training fit check (observed vs mean predicted default rate):")
+trainScored.agg(
+    spark_round(mean("label"), 4).alias("Observed_Rate"),
+    spark_round(mean("pred_prob"), 4).alias("Predicted_Rate")
+).show()
 
 # ------------------------------------------------------------------
-# Step 5: Score the validation dataset
+# Step 4: Score the validation dataset
 # SAS equivalent:
 #   proc plm restore=work.logit_model;
-#       score data=work.valid out=work.valid_scored predicted=pred_prob;
+#       score data=work.valid out=work.valid_scored predicted=pred_prob
+#           / ilink;
 #   run;
 # ------------------------------------------------------------------
-predictions = model.transform(valid)
+# vector_to_array()[1] is the modelled probability of BAD=1, i.e. the
+# ILINK-transformed predicted value SAS writes as pred_prob
+predictions = model.transform(valid) \
+    .withColumn("pred_prob", vector_to_array(col("probability"))[1])
 
 # ------------------------------------------------------------------
-# Step 6: Create confusion matrix
+# Step 5: Create predicted classes and confusion matrix
 # SAS equivalent:
 #   data work.valid_scored;
+#       set work.valid_scored;
 #       if pred_prob >= 0.5 then PREDICTED_BAD = 1;
 #       else PREDICTED_BAD = 0;
 #   run;
 #   proc freq data=work.valid_scored;
-#       tables BAD * PREDICTED_BAD;
+#       tables BAD * PREDICTED_BAD / nopercent norow nocol;
 #   run;
 # ------------------------------------------------------------------
+validScored = predictions.withColumn(
+    "PREDICTED_BAD",
+    when(col("pred_prob") >= 0.5, lit(1)).otherwise(lit(0))
+)
+
 print("\n" + "=" * 60)
 print("Confusion Matrix - Validation Set")
 print("(equivalent to PROC FREQ tables BAD * PREDICTED_BAD)")
 print("=" * 60)
 
-predictions.groupBy("label", "prediction") \
-    .count() \
-    .orderBy("label", "prediction") \
+# Cross-tabulation with BAD on rows and PREDICTED_BAD on columns,
+# frequencies only (nopercent norow nocol)
+validScored.groupBy("BAD") \
+    .pivot("PREDICTED_BAD", [0, 1]) \
+    .agg(count("*")) \
+    .na.fill(0) \
+    .orderBy("BAD") \
     .show()
 
 # ------------------------------------------------------------------
-# Step 7: Calculate model performance metrics
+# Step 6: Calculate model performance metrics
 # SAS equivalent:
 #   proc logistic ... ;
 #       roc;
@@ -232,6 +290,55 @@ for metricName in ["accuracy", "weightedPrecision", "weightedRecall", "f1"]:
     value = multiEval.evaluate(predictions)
     print(f"{metricName}: {value:.4f}")
 
+# Rank-order association statistics between the predicted probability
+# and the observed response, as produced by the PROC LOGISTIC
+# "Association of Predicted Probabilities and Observed Responses" table
+scoredPairs = validScored.select("label", "pred_prob").collect()
+eventProbs = sorted(r["pred_prob"] for r in scoredPairs if r["label"] == 1.0)
+nonEventProbs = sorted(r["pred_prob"] for r in scoredPairs if r["label"] == 0.0)
+
+concordant = 0
+discordant = 0
+tied = 0
+for p in eventProbs:
+    lower = bisect_left(nonEventProbs, p)
+    upper = bisect_right(nonEventProbs, p)
+    concordant += lower
+    tied += upper - lower
+    discordant += len(nonEventProbs) - upper
+
+totalPairs = len(eventProbs) * len(nonEventProbs)
+totalObs = len(scoredPairs)
+cStatistic = (concordant + 0.5 * tied) / totalPairs
+somersD = (concordant - discordant) / totalPairs
+gamma = (concordant - discordant) / (concordant + discordant)
+tauA = (concordant - discordant) / (0.5 * totalObs * (totalObs - 1))
+
+associationStats = spark.createDataFrame(
+    [
+        ("Percent Concordant", round(100.0 * concordant / totalPairs, 4)),
+        ("Percent Discordant", round(100.0 * discordant / totalPairs, 4)),
+        ("Percent Tied", round(100.0 * tied / totalPairs, 4)),
+        ("Pairs", float(totalPairs)),
+        ("Somers' D", round(somersD, 4)),
+        ("Gamma", round(gamma, 4)),
+        ("Tau-a", round(tauA, 4)),
+        ("c", round(cStatistic, 4)),
+    ],
+    ["Label", "Value"]
+)
+
+# ------------------------------------------------------------------
+# Step 7: Display key metrics
+# SAS equivalent:
+#   proc print data=work.association_stats;
+#   run;
+# ------------------------------------------------------------------
+print("\n" + "=" * 60)
+print("Model Association Statistics")
+print("=" * 60)
+associationStats.show(truncate=False)
+
 # ------------------------------------------------------------------
 # Step 8: Score distribution by actual outcome
 # SAS equivalent:
@@ -242,26 +349,23 @@ for metricName in ["accuracy", "weightedPrecision", "weightedRecall", "f1"]:
 # ------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("Predicted Probability Distribution by Actual Outcome")
+print("(equivalent to PROC MEANS with CLASS BAD)")
 print("=" * 60)
 
-# Extract probability of default (class 1)
-from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
-
-extractProb = udf(lambda v: float(v[1]), DoubleType())
-predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
-
-predictions.groupBy("label") \
+# n mean std min p25 median p75 max, classified by BAD
+validScored.groupBy("BAD") \
     .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
+        count("pred_prob").alias("N"),
+        spark_round(mean("pred_prob"), 4).alias("Mean"),
+        spark_round(stddev("pred_prob"), 4).alias("Std_Dev"),
+        spark_round(spark_min("pred_prob"), 4).alias("Minimum"),
+        spark_round(expr("percentile_approx(pred_prob, 0.25)"), 4).alias("P25"),
+        spark_round(expr("percentile_approx(pred_prob, 0.5)"), 4).alias("Median"),
+        spark_round(expr("percentile_approx(pred_prob, 0.75)"), 4).alias("P75"),
+        spark_round(spark_max("pred_prob"), 4).alias("Maximum")
     ) \
-    .show()
-
-# Detailed statistics
-for labelVal in [0.0, 1.0]:
-    subset = predictions.filter(col("label") == labelVal)
-    print(f"\nActual BAD = {int(labelVal)}:")
-    subset.select("pred_prob").describe().show()
+    .orderBy("BAD") \
+    .show(truncate=False)
 
 # Clean up
 spark.stop()
