@@ -48,15 +48,27 @@ df = df \
 #           30   -< 40  = 'Medium'
 #           40   -< 50  = 'High'
 #           50   - high  = 'Very High';
+#       value delinq_risk
+#           0         = 'None'
+#           1         = 'Low'
+#           2 - 3     = 'Medium'
+#           4 - high  = 'High';
+#       value risk_score
+#           low  -< 3 = 'Low Risk'
+#           3    -< 5 = 'Medium Risk'
+#           5    -< 7 = 'High Risk'
+#           7 - high  = 'Very High Risk';
 #   run;
 #
 # PySpark uses when/otherwise chains instead of PROC FORMAT value ranges.
 # ------------------------------------------------------------------
 
 # LTV Risk Category
+# SAS leaves the character variable blank when LTV is missing, so an
+# unassigned category is an empty string rather than a null.
 dfRisk = df.withColumn(
     "LTV_RISK_CAT",
-    when(col("LTV").isNull(), lit(None))
+    when(col("LTV").isNull(), lit(""))
     .when(col("LTV") < 0.60, lit("Low"))
     .when(col("LTV") < 0.80, lit("Medium"))
     .otherwise(lit("High"))
@@ -65,7 +77,7 @@ dfRisk = df.withColumn(
 # Debt-to-Income Risk Category
 dfRisk = dfRisk.withColumn(
     "DTI_RISK_CAT",
-    when(col("DEBTINC").isNull(), lit(None))
+    when(col("DEBTINC").isNull(), lit(""))
     .when(col("DEBTINC") < 30, lit("Low"))
     .when(col("DEBTINC") < 40, lit("Medium"))
     .when(col("DEBTINC") < 50, lit("High"))
@@ -75,7 +87,7 @@ dfRisk = dfRisk.withColumn(
 # Delinquency Risk Category
 dfRisk = dfRisk.withColumn(
     "DELINQ_RISK_CAT",
-    when(col("DELINQ").isNull(), lit(None))
+    when(col("DELINQ").isNull(), lit(""))
     .when(col("DELINQ") == 0, lit("None"))
     .when(col("DELINQ") == 1, lit("Low"))
     .when(col("DELINQ") <= 3, lit("Medium"))
@@ -142,6 +154,32 @@ dfRisk = dfRisk.withColumn(
 )
 
 # ------------------------------------------------------------------
+# Step 2b: Column labels
+# SAS equivalent:
+#   label LTV_RISK_CAT = "LTV Risk Category"
+#         DTI_RISK_CAT = "Debt-to-Income Risk Category"
+#         DELINQ_RISK_CAT = "Delinquency Risk Category"
+#         RISK_SCORE = "Composite Risk Score (0-10)"
+#         RISK_SEGMENT = "Risk Segment";
+#
+# PySpark has no LABEL statement; labels are kept as metadata and printed.
+# ------------------------------------------------------------------
+columnLabels = {
+    "LTV_RISK_CAT": "LTV Risk Category",
+    "DTI_RISK_CAT": "Debt-to-Income Risk Category",
+    "DELINQ_RISK_CAT": "Delinquency Risk Category",
+    "RISK_SCORE": "Composite Risk Score (0-10)",
+    "RISK_SEGMENT": "Risk Segment",
+}
+
+print("=" * 60)
+print("Risk Column Labels (equivalent to SAS LABEL statement)")
+print("=" * 60)
+for colName, label in columnLabels.items():
+    print(f"  {colName:16s} -> {label}")
+print()
+
+# ------------------------------------------------------------------
 # Step 3: Distribution across risk segments
 # SAS equivalent:
 #   proc freq data=work.home_equity_risk;
@@ -180,10 +218,19 @@ print("=" * 60)
 dfRisk.groupBy("RISK_SEGMENT") \
     .agg(
         count("*").alias("N"),
+        count("BAD").alias("N_BAD"),
+        spark_round(mean("BAD"), 4).alias("Mean_BAD"),
+        spark_round(stddev("BAD"), 4).alias("Std_BAD"),
         spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct"),
-        spark_round(mean("LOAN"), 2).alias("Avg_LOAN"),
-        spark_round(mean("LTV"), 4).alias("Avg_LTV"),
-        spark_round(mean("DEBTINC"), 2).alias("Avg_DEBTINC")
+        count("LOAN").alias("N_LOAN"),
+        spark_round(mean("LOAN"), 2).alias("Mean_LOAN"),
+        spark_round(stddev("LOAN"), 2).alias("Std_LOAN"),
+        count("LTV").alias("N_LTV"),
+        spark_round(mean("LTV"), 4).alias("Mean_LTV"),
+        spark_round(stddev("LTV"), 4).alias("Std_LTV"),
+        count("DEBTINC").alias("N_DEBTINC"),
+        spark_round(mean("DEBTINC"), 2).alias("Mean_DEBTINC"),
+        spark_round(stddev("DEBTINC"), 2).alias("Std_DEBTINC")
     ) \
     .orderBy("RISK_SEGMENT") \
     .show(truncate=False)
@@ -199,6 +246,13 @@ print("=" * 60)
 print("Default Rates by LTV Risk and DTI Risk")
 print("=" * 60)
 
+# Three-way frequency table: LTV_RISK_CAT * DTI_RISK_CAT * BAD
+dfRisk.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT", "BAD") \
+    .agg(count("*").alias("Frequency")) \
+    .orderBy("LTV_RISK_CAT", "DTI_RISK_CAT", "BAD") \
+    .show(50, truncate=False)
+
+# Default rate summary for the same cells
 dfRisk.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
     .agg(
         count("*").alias("N"),
