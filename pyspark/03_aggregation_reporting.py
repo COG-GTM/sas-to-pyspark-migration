@@ -7,7 +7,7 @@ Equivalent SAS Program: sas/03_aggregation_reporting.sas
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, count, mean, stddev, min as spark_min, max as spark_max,
-    round as spark_round, lit, when, initcap
+    round as spark_round, lit, when, initcap, percentile_approx, coalesce
 )
 
 # Initialize SparkSession
@@ -30,8 +30,10 @@ df = df \
         "LOAN_OUTCOME",
         when(col("BAD") == 0, lit("Paid")).when(col("BAD") == 1, lit("Default"))
     ) \
+    .withColumn("CITY", initcap(col("CITY"))) \
     .filter(
         col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull() &
+        (col("LTV") > 0) & (col("LTV") < 5) &
         (col("LOAN") > 0) & (col("VALUE") > 0)
     )
 
@@ -49,10 +51,13 @@ print("=" * 60)
 print("Frequency Tables (equivalent to PROC FREQ)")
 print("=" * 60)
 
+# PROC FREQ drops missing values from the table and computes percentages over
+# the non-missing observations, so each column is filtered before counting.
 for catCol in ["JOB", "REASON", "LOAN_OUTCOME", "REGION"]:
     print(f"\n--- {catCol} ---")
-    totalCount = df.count()
-    df.groupBy(catCol) \
+    dfCat = df.filter(col(catCol).isNotNull())
+    totalCount = dfCat.count()
+    dfCat.groupBy(catCol) \
         .agg(
             count("*").alias("Frequency"),
             spark_round(count("*") / lit(totalCount) * 100, 2).alias("Percent")
@@ -73,18 +78,21 @@ print("=" * 60)
 print("Summary Statistics by Loan Outcome (equivalent to PROC MEANS)")
 print("=" * 60)
 
-df.groupBy("LOAN_OUTCOME") \
-    .agg(
-        count("LOAN").alias("N"),
-        spark_round(mean("LOAN"), 2).alias("Mean_LOAN"),
-        spark_round(stddev("LOAN"), 2).alias("Std_LOAN"),
-        spark_round(spark_min("LOAN"), 2).alias("Min_LOAN"),
-        spark_round(spark_max("LOAN"), 2).alias("Max_LOAN"),
-        spark_round(mean("MORTDUE"), 2).alias("Mean_MORTDUE"),
-        spark_round(mean("VALUE"), 2).alias("Mean_VALUE"),
-        spark_round(mean("DEBTINC"), 2).alias("Mean_DEBTINC"),
-    ) \
-    .show(truncate=False)
+# SAS PROC MEANS reports n / mean / median / std / min / max for every analysis
+# variable, so each VAR gets its own table of the same six statistics.
+for analysisCol in ["LOAN", "MORTDUE", "VALUE", "DEBTINC"]:
+    print(f"\n--- {analysisCol} ---")
+    df.groupBy("LOAN_OUTCOME") \
+        .agg(
+            count(analysisCol).alias("N"),
+            spark_round(mean(analysisCol), 2).alias("Mean"),
+            spark_round(percentile_approx(col(analysisCol), 0.5), 2).alias("Median"),
+            spark_round(stddev(analysisCol), 2).alias("Std"),
+            spark_round(spark_min(analysisCol), 2).alias("Min"),
+            spark_round(spark_max(analysisCol), 2).alias("Max"),
+        ) \
+        .orderBy("LOAN_OUTCOME") \
+        .show(truncate=False)
 
 # ------------------------------------------------------------------
 # Step 3: Cross-tabulation of default rates by JOB and REGION
@@ -93,7 +101,8 @@ df.groupBy("LOAN_OUTCOME") \
 #       class JOB REGION;
 #       var BAD;
 #       table JOB all='Total',
-#             REGION * BAD * (n mean*f=percent8.2);
+#             REGION * BAD * (n mean*f=percent8.2) all='Total' * BAD *
+#             (n mean*f=percent8.2);
 #   run;
 # ------------------------------------------------------------------
 print("=" * 60)
@@ -105,14 +114,25 @@ print("=" * 60)
 crossTab = df.stat.crosstab("JOB", "REGION")
 crossTab.show(truncate=False)
 
-# Detailed default rates by JOB and REGION
-df.groupBy("JOB", "REGION") \
+# PROC TABULATE drops observations with a missing CLASS value
+dfTab = df.filter(col("JOB").isNotNull() & col("REGION").isNotNull())
+
+# Detailed default rates by JOB and REGION, including the SAS all='Total'
+# margins on both dimensions (cube produces the row, column and grand totals)
+tabulate = dfTab.cube("JOB", "REGION") \
     .agg(
         count("*").alias("N"),
         spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct")
     ) \
-    .orderBy("JOB", "REGION") \
-    .show(50, truncate=False)
+    .withColumn("JOB", coalesce(col("JOB"), lit("Total"))) \
+    .withColumn("REGION", coalesce(col("REGION"), lit("Total")))
+
+tabulate.orderBy("JOB", "REGION").show(100, truncate=False)
+
+# Same figures laid out as a PROC TABULATE-style pivot (default rate %)
+dfTab.groupBy("JOB").pivot("REGION").agg(
+    spark_round(mean("BAD") * 100, 2)
+).show(truncate=False)
 
 # ------------------------------------------------------------------
 # Step 4: Top 10 states by average loan amount
@@ -158,16 +178,19 @@ print("=" * 60)
 print("Loan Distribution by Reason and Outcome")
 print("=" * 60)
 
-df.groupBy("REASON", "LOAN_OUTCOME") \
-    .agg(
-        count("*").alias("N"),
-        spark_round(mean("LOAN"), 2).alias("Mean_LOAN"),
-        spark_round(stddev("LOAN"), 2).alias("Std_LOAN"),
-        spark_round(mean("LTV"), 4).alias("Mean_LTV"),
-        spark_round(mean("DEBTINC"), 2).alias("Mean_DEBTINC")
-    ) \
-    .orderBy("REASON", "LOAN_OUTCOME") \
-    .show(truncate=False)
+# n / mean / std / median for each analysis variable, one table per VAR
+for analysisCol, decimals in [("LOAN", 2), ("LTV", 4), ("DEBTINC", 2)]:
+    print(f"\n--- {analysisCol} ---")
+    df.filter(col("REASON").isNotNull() & col("LOAN_OUTCOME").isNotNull()) \
+        .groupBy("REASON", "LOAN_OUTCOME") \
+        .agg(
+            count(analysisCol).alias("N"),
+            spark_round(mean(analysisCol), decimals).alias("Mean"),
+            spark_round(stddev(analysisCol), decimals).alias("Std"),
+            spark_round(percentile_approx(col(analysisCol), 0.5), decimals).alias("Median")
+        ) \
+        .orderBy("REASON", "LOAN_OUTCOME") \
+        .show(truncate=False)
 
 # Clean up
 spark.stop()
