@@ -5,10 +5,14 @@ Equivalent SAS Program: sas/05_logistic_regression.sas
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit
+from pyspark.sql.functions import (
+    col, when, lit, count, mean, stddev, min as spark_min,
+    max as spark_max, expr
+)
 from pyspark.ml.feature import (
     VectorAssembler, StringIndexer, OneHotEncoder
 )
+from pyspark.ml.functions import vector_to_array
 from pyspark.ml.classification import LogisticRegression
 from pyspark.ml import Pipeline
 from pyspark.ml.evaluation import (
@@ -150,14 +154,28 @@ model = pipeline.fit(train)
 # Extract the logistic regression model from the pipeline
 lrModel = model.stages[-1]
 
+# Score the training data (SAS: output out=work.train_scored predicted=pred_prob)
+trainScored = model.transform(train) \
+    .withColumn("pred_prob", vector_to_array(col("probability"))[1])
+
+# Map assembled vector positions back to readable feature names
+featureAttrs = trainScored.schema["features"].metadata["ml_attr"]["attrs"]
+featureNames = [
+    attr["name"]
+    for group in featureAttrs.values()
+    for attr in sorted(group, key=lambda a: a["idx"])
+]
+
 # Display model coefficients
 print(f"\nIntercept: {lrModel.intercept:.4f}")
 print(f"Number of features: {len(lrModel.coefficients)}")
-print(f"\nCoefficients (non-zero):")
-featureNames = numericFeatures + ["JOB_VEC", "REASON_VEC"]
+print("\nCoefficients (non-zero, i.e. retained by L1 selection):")
 for i, coef in enumerate(lrModel.coefficients):
     if abs(coef) > 0.0001:
-        print(f"  Feature {i}: {coef:.6f}")
+        print(f"  {featureNames[i]}: {coef:.6f}")
+
+print("\nTraining set scored (first 5 predicted probabilities):")
+trainScored.select("BAD", "pred_prob").show(5)
 
 # ------------------------------------------------------------------
 # Step 5: Score the validation dataset
@@ -166,7 +184,8 @@ for i, coef in enumerate(lrModel.coefficients):
 #       score data=work.valid out=work.valid_scored predicted=pred_prob;
 #   run;
 # ------------------------------------------------------------------
-predictions = model.transform(valid)
+predictions = model.transform(valid) \
+    .withColumn("pred_prob", vector_to_array(col("probability"))[1])
 
 # ------------------------------------------------------------------
 # Step 6: Create confusion matrix
@@ -179,15 +198,23 @@ predictions = model.transform(valid)
 #       tables BAD * PREDICTED_BAD;
 #   run;
 # ------------------------------------------------------------------
+predictions = predictions.withColumn(
+    "PREDICTED_BAD",
+    when(col("pred_prob") >= 0.5, lit(1)).otherwise(lit(0))
+)
+
 print("\n" + "=" * 60)
 print("Confusion Matrix - Validation Set")
 print("(equivalent to PROC FREQ tables BAD * PREDICTED_BAD)")
 print("=" * 60)
 
-predictions.groupBy("label", "prediction") \
+predictions.groupBy("BAD", "PREDICTED_BAD") \
     .count() \
-    .orderBy("label", "prediction") \
+    .orderBy("BAD", "PREDICTED_BAD") \
     .show()
+
+# Cross-tabulated layout, as PROC FREQ prints it
+predictions.crosstab("BAD", "PREDICTED_BAD").show()
 
 # ------------------------------------------------------------------
 # Step 7: Calculate model performance metrics
@@ -233,6 +260,63 @@ for metricName in ["accuracy", "weightedPrecision", "weightedRecall", "f1"]:
     print(f"{metricName}: {value:.4f}")
 
 # ------------------------------------------------------------------
+# Step 7b: Association statistics table
+# SAS equivalent:
+#   ods output Association=work.association_stats;
+#   proc print data=work.association_stats;
+#
+# SAS builds these from all event/non-event response pairs; the same
+# pairs are counted here with a join between the BAD=1 and BAD=0 rows.
+# ------------------------------------------------------------------
+eventProbs = predictions.filter(col("BAD") == 1).select(
+    col("pred_prob").alias("eventProb")
+)
+nonEventProbs = predictions.filter(col("BAD") == 0).select(
+    col("pred_prob").alias("nonEventProb")
+)
+
+pairCounts = eventProbs.crossJoin(nonEventProbs).agg(
+    count(lit(1)).alias("totalPairs"),
+    count(when(col("eventProb") > col("nonEventProb"), lit(1))).alias("concordant"),
+    count(when(col("eventProb") < col("nonEventProb"), lit(1))).alias("discordant"),
+    count(when(col("eventProb") == col("nonEventProb"), lit(1))).alias("tied")
+).collect()[0]
+
+totalPairs = pairCounts["totalPairs"]
+concordantPct = 100.0 * pairCounts["concordant"] / totalPairs
+discordantPct = 100.0 * pairCounts["discordant"] / totalPairs
+tiedPct = 100.0 * pairCounts["tied"] / totalPairs
+somersD = (pairCounts["concordant"] - pairCounts["discordant"]) / totalPairs
+gamma = (pairCounts["concordant"] - pairCounts["discordant"]) / (
+    pairCounts["concordant"] + pairCounts["discordant"]
+)
+validCount = predictions.count()
+tauA = (pairCounts["concordant"] - pairCounts["discordant"]) / (
+    0.5 * validCount * (validCount - 1)
+)
+cStatistic = (pairCounts["concordant"] + 0.5 * pairCounts["tied"]) / totalPairs
+
+print("\n" + "=" * 60)
+print("Model Association Statistics")
+print("(equivalent to PROC PRINT data=work.association_stats)")
+print("=" * 60)
+
+associationStats = spark.createDataFrame(
+    [
+        ("Percent Concordant", round(concordantPct, 4)),
+        ("Percent Discordant", round(discordantPct, 4)),
+        ("Percent Tied", round(tiedPct, 4)),
+        ("Pairs", float(totalPairs)),
+        ("Somers' D", round(somersD, 4)),
+        ("Gamma", round(gamma, 4)),
+        ("Tau-a", round(tauA, 4)),
+        ("c", round(cStatistic, 4)),
+    ],
+    ["Label2", "nValue2"]
+)
+associationStats.show(truncate=False)
+
+# ------------------------------------------------------------------
 # Step 8: Score distribution by actual outcome
 # SAS equivalent:
 #   proc means data=work.valid_scored n mean std min p25 median p75 max;
@@ -244,24 +328,19 @@ print("\n" + "=" * 60)
 print("Predicted Probability Distribution by Actual Outcome")
 print("=" * 60)
 
-# Extract probability of default (class 1)
-from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
-
-extractProb = udf(lambda v: float(v[1]), DoubleType())
-predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
-
-predictions.groupBy("label") \
+predictions.groupBy("BAD") \
     .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
+        count("pred_prob").alias("N"),
+        mean("pred_prob").alias("Mean"),
+        stddev("pred_prob").alias("StdDev"),
+        spark_min("pred_prob").alias("Min"),
+        expr("percentile_approx(pred_prob, 0.25)").alias("P25"),
+        expr("percentile_approx(pred_prob, 0.5)").alias("Median"),
+        expr("percentile_approx(pred_prob, 0.75)").alias("P75"),
+        spark_max("pred_prob").alias("Max")
     ) \
+    .orderBy("BAD") \
     .show()
-
-# Detailed statistics
-for labelVal in [0.0, 1.0]:
-    subset = predictions.filter(col("label") == labelVal)
-    print(f"\nActual BAD = {int(labelVal)}:")
-    subset.select("pred_prob").describe().show()
 
 # Clean up
 spark.stop()
