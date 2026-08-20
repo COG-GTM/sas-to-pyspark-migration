@@ -48,6 +48,16 @@ df = df \
 #           30   -< 40  = 'Medium'
 #           40   -< 50  = 'High'
 #           50   - high  = 'Very High';
+#       value delinq_risk
+#           0         = 'None'
+#           1         = 'Low'
+#           2 - 3     = 'Medium'
+#           4 - high  = 'High';
+#       value risk_score
+#           low  -< 3 = 'Low Risk'
+#           3    -< 5 = 'Medium Risk'
+#           5    -< 7 = 'High Risk'
+#           7 - high  = 'Very High Risk';
 #   run;
 #
 # PySpark uses when/otherwise chains instead of PROC FORMAT value ranges.
@@ -142,6 +152,31 @@ dfRisk = dfRisk.withColumn(
 )
 
 # ------------------------------------------------------------------
+# Column labels
+# SAS equivalent:
+#   label LTV_RISK_CAT = "LTV Risk Category"
+#         DTI_RISK_CAT = "Debt-to-Income Risk Category"
+#         DELINQ_RISK_CAT = "Delinquency Risk Category"
+#         RISK_SCORE = "Composite Risk Score (0-10)"
+#         RISK_SEGMENT = "Risk Segment";
+#
+# Note: PySpark has no native column labels; documented as metadata.
+# ------------------------------------------------------------------
+columnLabels = {
+    "LTV_RISK_CAT": "LTV Risk Category",
+    "DTI_RISK_CAT": "Debt-to-Income Risk Category",
+    "DELINQ_RISK_CAT": "Delinquency Risk Category",
+    "RISK_SCORE": "Composite Risk Score (0-10)",
+    "RISK_SEGMENT": "Risk Segment",
+}
+
+print("=" * 60)
+print("Risk Segmentation Column Labels (SAS-style variable labels)")
+print("=" * 60)
+for colName, labelText in columnLabels.items():
+    print(f"  {colName:16s} -> {labelText}")
+
+# ------------------------------------------------------------------
 # Step 3: Distribution across risk segments
 # SAS equivalent:
 #   proc freq data=work.home_equity_risk;
@@ -177,13 +212,23 @@ print("Average Default Rate by Risk Segment")
 print("(equivalent to PROC MEANS with CLASS)")
 print("=" * 60)
 
+for statCol, places in [("BAD", 4), ("LOAN", 2), ("LTV", 4), ("DEBTINC", 2)]:
+    print(f"\n--- {statCol} ---")
+    dfRisk.groupBy("RISK_SEGMENT") \
+        .agg(
+            count(col(statCol)).alias("N"),
+            spark_round(mean(col(statCol)), places).alias(f"Mean_{statCol}"),
+            spark_round(stddev(col(statCol)), places).alias(f"Std_{statCol}")
+        ) \
+        .orderBy("RISK_SEGMENT") \
+        .show(truncate=False)
+
+# Default rate summary across segments
+print("\n--- Default rate by segment ---")
 dfRisk.groupBy("RISK_SEGMENT") \
     .agg(
         count("*").alias("N"),
-        spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct"),
-        spark_round(mean("LOAN"), 2).alias("Avg_LOAN"),
-        spark_round(mean("LTV"), 4).alias("Avg_LTV"),
-        spark_round(mean("DEBTINC"), 2).alias("Avg_DEBTINC")
+        spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct")
     ) \
     .orderBy("RISK_SEGMENT") \
     .show(truncate=False)
@@ -199,6 +244,12 @@ print("=" * 60)
 print("Default Rates by LTV Risk and DTI Risk")
 print("=" * 60)
 
+dfRisk.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT", "BAD") \
+    .agg(count("*").alias("Frequency")) \
+    .orderBy("LTV_RISK_CAT", "DTI_RISK_CAT", "BAD") \
+    .show(50, truncate=False)
+
+print("--- Default rate by LTV Risk x DTI Risk ---")
 dfRisk.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
     .agg(
         count("*").alias("N"),
