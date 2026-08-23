@@ -1,6 +1,6 @@
 # SAS to PySpark Migration Demo
 
-This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, it provides one worked migration example (data loading) — with side-by-side SAS and PySpark code and inline comments mapping each SAS construct to its PySpark equivalent — alongside the original SAS programs that are ready to be migrated, plus a validation suite to check correctness.
+This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, it provides worked migration examples (data loading, data cleaning) — with side-by-side SAS and PySpark code and inline comments mapping each SAS construct to its PySpark equivalent — alongside the original SAS programs that are ready to be migrated, plus a validation suite to check correctness.
 
 Built for teams evaluating a move from SAS to open-source distributed computing on platforms like Databricks, Amazon EMR, or Azure Synapse.
 
@@ -24,12 +24,12 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 | # | SAS Program | PySpark Script | Description |
 |---|---|---|---|
 | 1 | `sas/01_data_loading.sas` | `pyspark/01_data_loading.py` | Load CSV, apply labels/formats, inspect metadata, preview data |
+| 2 | `sas/02_data_cleaning.sas` | `pyspark/02_data_cleaning.py` | Derived columns (LTV, LOAN_OUTCOME), missing-value flags, filtering, outlier stats |
 
 ### To be migrated
 
 The remaining SAS programs are included as migration targets and have not yet been ported to PySpark:
 
-- `sas/02_data_cleaning.sas`
 - `sas/03_aggregation_reporting.sas`
 - `sas/04_risk_segmentation.sas`
 - `sas/05_logistic_regression.sas`
@@ -138,7 +138,8 @@ sas-to-pyspark-migration/
 │   ├── 04_risk_segmentation.sas               # PROC FORMAT, risk scoring, PROC FREQ
 │   └── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
 ├── pyspark/
-│   └── 01_data_loading.py                     # spark.read.csv, printSchema, show
+│   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
+│   └── 02_data_cleaning.py                    # when/otherwise, missing flags, filter, summary
 ├── migration_guide/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples
