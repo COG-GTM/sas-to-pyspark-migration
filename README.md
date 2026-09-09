@@ -1,6 +1,6 @@
 # SAS to PySpark Migration Demo
 
-This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, it provides one worked migration example (data loading) — with side-by-side SAS and PySpark code and inline comments mapping each SAS construct to its PySpark equivalent — alongside the original SAS programs that are ready to be migrated, plus a validation suite to check correctness.
+This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, it provides worked migration examples — with side-by-side SAS and PySpark code and inline comments mapping each SAS construct to its PySpark equivalent — plus a validation suite to check correctness.
 
 Built for teams evaluating a move from SAS to open-source distributed computing on platforms like Databricks, Amazon EMR, or Azure Synapse.
 
@@ -19,20 +19,28 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 
 ## Migration Examples
 
-### Completed
-
 | # | SAS Program | PySpark Script | Description |
 |---|---|---|---|
 | 1 | `sas/01_data_loading.sas` | `pyspark/01_data_loading.py` | Load CSV, apply labels/formats, inspect metadata, preview data |
+| 2 | `sas/02_data_cleaning.sas` | `pyspark/02_data_cleaning.py` | Derived columns (LTV, LOAN_OUTCOME), array-based missing flags, filtering, PROC MEANS statistics |
+| 3 | `sas/03_aggregation_reporting.sas` | `pyspark/03_aggregation_reporting.py` | PROC FREQ, PROC MEANS by CLASS, PROC TABULATE cross-tabs, PROC SQL via Spark SQL |
+| 4 | `sas/04_risk_segmentation.sas` | `pyspark/04_risk_segmentation.py` | PROC FORMAT buckets, composite risk score, segment distribution and default rates |
+| 5 | `sas/05_logistic_regression.sas` | `pyspark/05_logistic_regression.py` | PROC LOGISTIC as a Spark ML pipeline: reference-level encoding, L1 selection, AUC, confusion matrix |
 
-### To be migrated
+Each PySpark script is self-contained: where the SAS programs chain through the WORK
+library, the PySpark scripts re-derive the cleaned DataFrame from `data/home_equity.csv`.
 
-The remaining SAS programs are included as migration targets and have not yet been ported to PySpark:
+### Notable translation choices
 
-- `sas/02_data_cleaning.sas`
-- `sas/03_aggregation_reporting.sas`
-- `sas/04_risk_segmentation.sas`
-- `sas/05_logistic_regression.sas`
+| SAS construct | PySpark equivalent |
+|---|---|
+| `propcase()` | `initcap()` |
+| `array` + `do` loop | Python loop generating `withColumn` calls |
+| `PROC MEANS` percentiles | `approxQuantile` / `percentile_approx` |
+| `PROC TABULATE` | `groupBy().pivot()` |
+| `PROC FORMAT` value ranges | chained `when().otherwise()` |
+| `class JOB(ref='Other')` | `StringIndexerModel.from_labels` with the reference level last, so `OneHotEncoder` drops it |
+| `selection=stepwise` | L1 (LASSO) regularization — Spark MLlib has no stepwise selection |
 
 ---
 
@@ -64,7 +72,7 @@ The [`migration_guide/`](migration_guide/) folder contains detailed reference do
 ### Prerequisites
 
 - Python 3.8+
-- Java 8 or 11 (required by PySpark)
+- Java 17+ (required by PySpark 4.x)
 
 ### Installation
 
@@ -79,6 +87,10 @@ Each script is self-contained and can be run independently:
 ```bash
 # From the repository root directory
 python pyspark/01_data_loading.py
+python pyspark/02_data_cleaning.py
+python pyspark/03_aggregation_reporting.py
+python pyspark/04_risk_segmentation.py
+python pyspark/05_logistic_regression.py
 ```
 
 ### Running the Tests
@@ -138,7 +150,11 @@ sas-to-pyspark-migration/
 │   ├── 04_risk_segmentation.sas               # PROC FORMAT, risk scoring, PROC FREQ
 │   └── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
 ├── pyspark/
-│   └── 01_data_loading.py                     # spark.read.csv, printSchema, show
+│   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
+│   ├── 02_data_cleaning.py                    # withColumn, missing flags, approxQuantile
+│   ├── 03_aggregation_reporting.py            # groupBy, pivot, Spark SQL
+│   ├── 04_risk_segmentation.py                # when/otherwise buckets, composite score
+│   └── 05_logistic_regression.py              # Spark ML Pipeline, LogisticRegression, AUC
 ├── migration_guide/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples
