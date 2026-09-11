@@ -4,9 +4,11 @@ Purpose: Create risk segments for loan portfolio analysis
 Equivalent SAS Program: sas/04_risk_segmentation.sas
 """
 
+from functools import reduce
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, when, lit, count, mean, stddev,
+    col, when, lit, count, mean, stddev, sum as spark_sum,
     round as spark_round
 )
 
@@ -32,7 +34,8 @@ df = df \
     ) \
     .filter(
         col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull() &
-        (col("LOAN") > 0) & (col("VALUE") > 0)
+        (col("LOAN") > 0) & (col("VALUE") > 0) &
+        (col("LTV") > 0) & (col("LTV") < 5)
     )
 
 # ------------------------------------------------------------------
@@ -139,7 +142,8 @@ dfRisk = dfRisk.withColumn(
     .when(col("RISK_SCORE") < 5, lit("Medium Risk"))
     .when(col("RISK_SCORE") < 7, lit("High Risk"))
     .otherwise(lit("Very High Risk"))
-)
+).cache()
+totalCount = dfRisk.count()
 
 # ------------------------------------------------------------------
 # Step 3: Distribution across risk segments
@@ -153,16 +157,18 @@ print("Distribution of Loans by Risk Segment")
 print("(equivalent to PROC FREQ)")
 print("=" * 60)
 
-totalCount = dfRisk.count()
 for segCol in ["RISK_SEGMENT", "LTV_RISK_CAT", "DTI_RISK_CAT", "DELINQ_RISK_CAT"]:
     print(f"\n--- {segCol} ---")
-    dfRisk.groupBy(segCol) \
+    dfNonMissing = dfRisk.filter(col(segCol).isNotNull())
+    nonMissingCount = dfNonMissing.count()
+    dfNonMissing.groupBy(segCol) \
         .agg(
             count("*").alias("Frequency"),
-            spark_round(count("*") / lit(totalCount) * 100, 2).alias("Percent")
+            spark_round(count("*") / lit(nonMissingCount) * 100, 2).alias("Percent")
         ) \
         .orderBy(segCol) \
         .show(truncate=False)
+    print(f"Frequency Missing = {totalCount - nonMissingCount}")
 
 # ------------------------------------------------------------------
 # Step 4: Default rate by risk segment
@@ -177,15 +183,29 @@ print("Average Default Rate by Risk Segment")
 print("(equivalent to PROC MEANS with CLASS)")
 print("=" * 60)
 
-dfRisk.groupBy("RISK_SEGMENT") \
+analysisVars = ["BAD", "LOAN", "LTV", "DEBTINC"]
+segmentOrder = when(col("RISK_SEGMENT") == "Low Risk", 1) \
+    .when(col("RISK_SEGMENT") == "Medium Risk", 2) \
+    .when(col("RISK_SEGMENT") == "High Risk", 3) \
+    .otherwise(4)
+
+meansByVar = [
+    dfRisk.groupBy("RISK_SEGMENT")
     .agg(
-        count("*").alias("N"),
-        spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct"),
-        spark_round(mean("LOAN"), 2).alias("Avg_LOAN"),
-        spark_round(mean("LTV"), 4).alias("Avg_LTV"),
-        spark_round(mean("DEBTINC"), 2).alias("Avg_DEBTINC")
-    ) \
-    .orderBy("RISK_SEGMENT") \
+        count("*").alias("N_Obs"),
+        lit(i).alias("VarOrder"),
+        lit(varName).alias("Variable"),
+        count(varName).alias("N"),
+        spark_round(mean(varName), 4).alias("Mean"),
+        spark_round(stddev(varName), 4).alias("Std")
+    )
+    for i, varName in enumerate(analysisVars)
+]
+
+reduce(lambda a, b: a.unionByName(b), meansByVar) \
+    .withColumn("SegOrder", segmentOrder) \
+    .orderBy("SegOrder", "VarOrder") \
+    .select("RISK_SEGMENT", "N_Obs", "Variable", "N", "Mean", "Std") \
     .show(truncate=False)
 
 # ------------------------------------------------------------------
@@ -199,13 +219,19 @@ print("=" * 60)
 print("Default Rates by LTV Risk and DTI Risk")
 print("=" * 60)
 
-dfRisk.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
+dfCross = dfRisk.filter(
+    col("LTV_RISK_CAT").isNotNull() & col("DTI_RISK_CAT").isNotNull() & col("BAD").isNotNull()
+)
+dfCross.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
     .agg(
+        spark_sum(when(col("BAD") == 0, 1).otherwise(0)).alias("BAD_0"),
+        spark_sum(when(col("BAD") == 1, 1).otherwise(0)).alias("BAD_1"),
         count("*").alias("N"),
         spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct")
     ) \
     .orderBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
     .show(20, truncate=False)
+print(f"Frequency Missing = {totalCount - dfCross.count()}")
 
 # Clean up
 spark.stop()
