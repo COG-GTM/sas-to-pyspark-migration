@@ -16,7 +16,8 @@ spark = SparkSession.builder \
     .master("local[*]") \
     .getOrCreate()
 
-# Load and prepare data (replicate cleaning from script 02)
+# Load and prepare data (replicate cleaning from script 02 so that df matches
+# work.home_equity_final, including the LTV sanity filter 0 < LTV < 5)
 df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
 df = df \
     .withColumn(
@@ -32,7 +33,8 @@ df = df \
     ) \
     .filter(
         col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull() &
-        (col("LOAN") > 0) & (col("VALUE") > 0)
+        (col("LOAN") > 0) & (col("VALUE") > 0) &
+        (col("LTV") > 0) & (col("LTV") < 5)
     )
 
 # ------------------------------------------------------------------

@@ -5,7 +5,8 @@ Equivalent SAS Program: sas/05_logistic_regression.sas
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit
+from pyspark.sql.functions import col, when, lit, count, mean, udf
+from pyspark.sql.types import DoubleType
 from pyspark.ml.feature import (
     VectorAssembler, StringIndexer, OneHotEncoder
 )
@@ -22,7 +23,8 @@ spark = SparkSession.builder \
     .master("local[*]") \
     .getOrCreate()
 
-# Load and prepare data (replicate cleaning from scripts 02/04)
+# Load and prepare data (replicate cleaning from scripts 02/04 so that df
+# matches work.home_equity_risk, including the LTV sanity filter 0 < LTV < 5)
 df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
 df = df \
     .withColumn(
@@ -34,7 +36,8 @@ df = df \
     ) \
     .filter(
         col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull() &
-        (col("LOAN") > 0) & (col("VALUE") > 0)
+        (col("LOAN") > 0) & (col("VALUE") > 0) &
+        (col("LTV") > 0) & (col("LTV") < 5)
     )
 
 # ------------------------------------------------------------------
@@ -245,16 +248,15 @@ print("Predicted Probability Distribution by Actual Outcome")
 print("=" * 60)
 
 # Extract probability of default (class 1)
-from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
-
 extractProb = udf(lambda v: float(v[1]), DoubleType())
 predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
 
 predictions.groupBy("label") \
     .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
+        count("pred_prob").alias("N"),
+        mean("pred_prob").alias("Mean_pred_prob")
     ) \
+    .orderBy("label") \
     .show()
 
 # Detailed statistics
