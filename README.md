@@ -1,6 +1,6 @@
 # SAS to PySpark Migration Demo
 
-This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, we show five complete migration examples — from basic data loading to logistic regression modeling — with side-by-side SAS and PySpark code, inline comments mapping each SAS construct to its PySpark equivalent, and validation tests to ensure correctness.
+This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, we show six complete migration examples — from basic data loading to logistic regression modeling and a monthly cohort / vintage report — with side-by-side SAS and PySpark code, inline comments mapping each SAS construct to its PySpark equivalent, and validation tests to ensure correctness.
 
 Built for teams evaluating a move from SAS to open-source distributed computing on platforms like Databricks, Amazon EMR, or Azure Synapse.
 
@@ -26,6 +26,7 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 | 3 | `sas/03_aggregation_reporting.sas` | `pyspark/03_aggregation_reporting.py` | Frequency tables, summary statistics, cross-tabulation, SQL queries |
 | 4 | `sas/04_risk_segmentation.sas` | `pyspark/04_risk_segmentation.py` | Risk bucketing (LTV, DTI, delinquency), composite scoring, segment analysis |
 | 5 | `sas/05_logistic_regression.sas` | `pyspark/05_logistic_regression.py` | Logistic regression with feature engineering, model evaluation, AUC/confusion matrix |
+| 6 | `sas/06_vintage_analysis.sas` | `pyspark/06_vintage_analysis.py` | Cohort / vintage report: BY-group `RETAIN` running total with `FIRST.`/`LAST.` flags, `calculated` PROC SQL summary, `%DO` macro threshold sweep stacked with `SET` |
 
 ---
 
@@ -76,18 +77,20 @@ python pyspark/02_data_cleaning.py
 python pyspark/03_aggregation_reporting.py
 python pyspark/04_risk_segmentation.py
 python pyspark/05_logistic_regression.py
+python pyspark/06_vintage_analysis.py
 ```
 
 ### Running the Tests
 
 ```bash
-python -m pytest tests/test_pyspark_outputs.py -v
+python -m pytest tests/ -v
 ```
 
 Or with unittest directly:
 
 ```bash
 python -m unittest tests.test_pyspark_outputs -v
+python -m unittest tests.test_06_vintage_analysis -v
 ```
 
 ---
@@ -133,18 +136,21 @@ sas-to-pyspark-migration/
 │   ├── 02_data_cleaning.sas                   # DATA step, arrays, PROC MEANS
 │   ├── 03_aggregation_reporting.sas           # PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL
 │   ├── 04_risk_segmentation.sas               # PROC FORMAT, risk scoring, PROC FREQ
-│   └── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
+│   ├── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
+│   └── 06_vintage_analysis.sas                # BY-group RETAIN/FIRST./LAST., PROC SQL calculated, %DO macro sweep
 ├── pyspark/
 │   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
 │   ├── 02_data_cleaning.py                    # withColumn, when/otherwise, na.fill, filter
 │   ├── 03_aggregation_reporting.py            # groupBy, agg, crosstab, spark.sql
 │   ├── 04_risk_segmentation.py                # when/otherwise chains, risk scoring
-│   └── 05_logistic_regression.py              # ML Pipeline, LogisticRegression, Evaluators
+│   ├── 05_logistic_regression.py              # ML Pipeline, LogisticRegression, Evaluators
+│   └── 06_vintage_analysis.py                 # Window functions (running sum, row_number), unionByName over a loop
 ├── migration_guide/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples
 └── tests/
-    └── test_pyspark_outputs.py                # Validation tests for all PySpark scripts
+    ├── test_pyspark_outputs.py                # Validation tests for scripts 01-05
+    └── test_06_vintage_analysis.py            # Parity tests for 06 against a pure-Python replay of the SAS logic
 ```
 
 ---
