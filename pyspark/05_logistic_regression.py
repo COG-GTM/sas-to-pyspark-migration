@@ -5,7 +5,10 @@ Equivalent SAS Program: sas/05_logistic_regression.sas
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit
+from pyspark.sql.functions import (
+    col, when, lit, count, mean, stddev, min as spark_min, max as spark_max, expr
+)
+from pyspark.ml.functions import vector_to_array
 from pyspark.ml.feature import (
     VectorAssembler, StringIndexer, OneHotEncoder
 )
@@ -34,6 +37,7 @@ df = df \
     ) \
     .filter(
         col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull() &
+        (col("LTV") > 0) & (col("LTV") < 5) &
         (col("LOAN") > 0) & (col("VALUE") > 0)
     )
 
@@ -52,11 +56,7 @@ modelData = df.filter(
     col("VALUE").isNotNull() &
     col("DEBTINC").isNotNull() &
     col("DELINQ").isNotNull() &
-    col("CLAGE").isNotNull() &
-    col("DEROG").isNotNull() &
-    col("NINQ").isNotNull() &
-    col("JOB").isNotNull() &
-    col("REASON").isNotNull()
+    col("CLAGE").isNotNull()
 )
 
 # Cast BAD to double for ML
@@ -112,6 +112,9 @@ numericFeatures = [
     "DELINQ", "DEROG", "CLAGE", "NINQ"
 ]
 
+# PROC LOGISTIC / PROC PLM only use rows where every model variable is present
+modelVariables = numericFeatures + ["JOB", "REASON"]
+
 # Assemble all features into a single vector
 assembler = VectorAssembler(
     inputCols=numericFeatures + ["JOB_VEC", "REASON_VEC"],
@@ -145,7 +148,10 @@ print("\n" + "=" * 60)
 print("Training Logistic Regression Model")
 print("=" * 60)
 
-model = pipeline.fit(train)
+trainComplete = train.dropna(subset=modelVariables)
+print(f"Training rows used for fit (complete predictors): {trainComplete.count()}")
+
+model = pipeline.fit(trainComplete)
 
 # Extract the logistic regression model from the pipeline
 lrModel = model.stages[-1]
@@ -153,8 +159,7 @@ lrModel = model.stages[-1]
 # Display model coefficients
 print(f"\nIntercept: {lrModel.intercept:.4f}")
 print(f"Number of features: {len(lrModel.coefficients)}")
-print(f"\nCoefficients (non-zero):")
-featureNames = numericFeatures + ["JOB_VEC", "REASON_VEC"]
+print("\nCoefficients (non-zero):")
 for i, coef in enumerate(lrModel.coefficients):
     if abs(coef) > 0.0001:
         print(f"  Feature {i}: {coef:.6f}")
@@ -166,7 +171,24 @@ for i, coef in enumerate(lrModel.coefficients):
 #       score data=work.valid out=work.valid_scored predicted=pred_prob;
 #   run;
 # ------------------------------------------------------------------
-predictions = model.transform(valid)
+# Rows with a missing predictor get a missing pred_prob in SAS, which the
+# DATA step then classifies as PREDICTED_BAD = 0
+validComplete = valid.dropna(subset=modelVariables)
+validIncomplete = valid.filter(
+    " OR ".join(f"{c} IS NULL" for c in modelVariables)
+)
+print(f"Validation rows with missing predictors (scored as PREDICTED_BAD=0): {validIncomplete.count()}")
+
+predictions = model.transform(validComplete) \
+    .withColumn("pred_prob", vector_to_array(col("probability"))[1])
+
+validScored = predictions.select("label", "prediction", "pred_prob").union(
+    validIncomplete.select(
+        col("label"),
+        lit(0.0).alias("prediction"),
+        lit(None).cast("double").alias("pred_prob")
+    )
+)
 
 # ------------------------------------------------------------------
 # Step 6: Create confusion matrix
@@ -184,7 +206,7 @@ print("Confusion Matrix - Validation Set")
 print("(equivalent to PROC FREQ tables BAD * PREDICTED_BAD)")
 print("=" * 60)
 
-predictions.groupBy("label", "prediction") \
+validScored.groupBy("label", "prediction") \
     .count() \
     .orderBy("label", "prediction") \
     .show()
@@ -229,7 +251,7 @@ multiEval = MulticlassClassificationEvaluator(
 
 for metricName in ["accuracy", "weightedPrecision", "weightedRecall", "f1"]:
     multiEval.setMetricName(metricName)
-    value = multiEval.evaluate(predictions)
+    value = multiEval.evaluate(validScored)
     print(f"{metricName}: {value:.4f}")
 
 # ------------------------------------------------------------------
@@ -244,24 +266,21 @@ print("\n" + "=" * 60)
 print("Predicted Probability Distribution by Actual Outcome")
 print("=" * 60)
 
-# Extract probability of default (class 1)
-from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
-
-extractProb = udf(lambda v: float(v[1]), DoubleType())
-predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
-
-predictions.groupBy("label") \
+# PROC MEANS drops rows whose analysis variable is missing
+validScored.filter(col("pred_prob").isNotNull()) \
+    .groupBy("label") \
     .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
+        count("pred_prob").alias("n"),
+        mean("pred_prob").alias("mean"),
+        stddev("pred_prob").alias("std"),
+        spark_min("pred_prob").alias("min"),
+        expr("percentile(pred_prob, 0.25)").alias("p25"),
+        expr("percentile(pred_prob, 0.5)").alias("median"),
+        expr("percentile(pred_prob, 0.75)").alias("p75"),
+        spark_max("pred_prob").alias("max")
     ) \
-    .show()
-
-# Detailed statistics
-for labelVal in [0.0, 1.0]:
-    subset = predictions.filter(col("label") == labelVal)
-    print(f"\nActual BAD = {int(labelVal)}:")
-    subset.select("pred_prob").describe().show()
+    .orderBy("label") \
+    .show(truncate=False)
 
 # Clean up
 spark.stop()
