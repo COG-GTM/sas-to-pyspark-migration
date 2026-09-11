@@ -1,0 +1,11 @@
+01_data_loading exit=0
+02_data_cleaning exit=0
+03_aggregation_reporting exit=0
+04_risk_segmentation exit=0
+05_logistic_regression exit=0
+pytest exit=1
+parity_01_data_loading exit=0
+parity_02_data_cleaning exit=0
+parity_03_aggregation_reporting exit=0
+parity_04_risk_segmentation exit=0
+parity_05_logistic_regression exit=0

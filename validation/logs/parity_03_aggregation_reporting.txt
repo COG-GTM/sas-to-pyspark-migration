@@ -1,0 +1,3 @@
+SAS row base (work.home_equity_final): 5337 rows
+245 / 245 checks matched
+results written to validation/03_aggregation_reporting/parity_results.md

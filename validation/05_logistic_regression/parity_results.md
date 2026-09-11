@@ -1,6 +1,6 @@
 # Parity results: 05_logistic_regression
 
-Log checked: `validation/05_logistic_regression/logs/run.txt`
+Log checked: `validation/logs/05_logistic_regression.txt`
 
 **23 / 23 checks matched**
 

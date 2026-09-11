@@ -2,7 +2,7 @@
 
 SAS reference: `sas/01_data_loading.sas`  
 PySpark stage: `pyspark/01_data_loading.py`  
-Stage log parsed: `validation/01_data_loading/logs/run.txt`  
+Stage log parsed: `validation/logs/01_data_loading.txt`  
 Expected values: recomputed with pandas / csv from `data/home_equity.csv` and the LABEL statement of the SAS source (no Spark).
 
 Row base: PROC IMPORT loads every CSV record (5960 rows, 18 variables). Stage 01 applies no filters; the `0 < LTV < 5`, `LOAN > 0`, `VALUE > 0` and non-missing LOAN/VALUE/BAD filters belong to `02_data_cleaning.sas` and are not expected here.

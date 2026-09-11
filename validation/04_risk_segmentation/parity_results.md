@@ -1,6 +1,6 @@
 # Parity results: 04_risk_segmentation
 
-Log checked: `validation/04_risk_segmentation/logs/run.txt`
+Log checked: `validation/logs/04_risk_segmentation.txt`
 
 SAS row base (work.home_equity_final): **5337** rows (LOAN/VALUE/BAD non-missing, 0 < LTV < 5, LOAN > 0, VALUE > 0).
 

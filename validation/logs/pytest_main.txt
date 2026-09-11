@@ -1,0 +1,48 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-7.3.2, pluggy-1.6.0 -- /home/ubuntu/.pyenv/versions/3.12.13/bin/python
+cachedir: .pytest_cache
+rootdir: /home/ubuntu/main-wt
+plugins: flaky-3.8.1, anyio-4.15.1, base-url-2.1.0, Faker-40.38.0, xdist-3.8.0, playwright-0.9.0
+collecting ... collected 14 items
+
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_column_count PASSED [  7%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_data_loads_successfully PASSED [ 14%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_expected_columns_exist PASSED [ 21%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_filtering_removes_nulls PASSED [ 28%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_frequency_counts FAILED [ 35%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_loan_outcome_derivation PASSED [ 42%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_logistic_regression_model PASSED [ 50%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_ltv_calculation PASSED [ 57%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_risk_categories_created PASSED [ 64%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_risk_score_range PASSED [ 71%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_risk_segment_labels PASSED [ 78%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_row_count PASSED [ 85%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_sql_query_top_states PASSED [ 92%]
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_summary_stats_by_group PASSED [100%]
+
+=================================== FAILURES ===================================
+_________________ TestHomeEquityPySpark.test_frequency_counts __________________
+
+self = <test_pyspark_outputs.TestHomeEquityPySpark testMethod=test_frequency_counts>
+
+    def test_frequency_counts(self):
+        """Verify groupBy counts produce valid results."""
+        jobCounts = self.df.groupBy("JOB").count().collect()
+        self.assertTrue(len(jobCounts) > 0, "No job categories found")
+    
+        # Check that total counts sum to dataset size (minus nulls)
+        totalFromGroups = sum(row["count"] for row in jobCounts)
+        nonNullJobs = self.df.filter(col("JOB").isNotNull()).count()
+>       self.assertEqual(totalFromGroups, nonNullJobs)
+E       AssertionError: 5960 != 5681
+
+tests/test_pyspark_outputs.py:152: AssertionError
+=============================== warnings summary ===============================
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_column_count
+  /home/ubuntu/.pyenv/versions/3.12.13/lib/python3.12/site-packages/pyspark/testing/utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+    require_minimum_pandas_version()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_frequency_counts
+=================== 1 failed, 13 passed, 1 warning in 12.92s ===================

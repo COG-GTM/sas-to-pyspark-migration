@@ -1,6 +1,6 @@
 # Parity results: 03_aggregation_reporting
 
-- Log checked: `validation/03_aggregation_reporting/logs/run.txt`
+- Log checked: `validation/logs/03_aggregation_reporting.txt`
 - SAS row base (work.home_equity_final): **5337** rows
 - Result: **245 / 245 checks matched**
 

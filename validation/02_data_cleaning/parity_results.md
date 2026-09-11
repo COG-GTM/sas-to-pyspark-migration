@@ -1,6 +1,6 @@
 # Parity results: 02_data_cleaning
 
-Stage log: `validation/02_data_cleaning/logs/run.txt`
+Stage log: `validation/logs/02_data_cleaning.txt`
 
 Row base (from SAS): 5960 raw rows -> `home_equity_filtered` keeps LOAN, VALUE, BAD non-missing (5848 rows) -> `home_equity_final` additionally keeps 0 < LTV < 5, LOAN > 0, VALUE > 0 (5337 rows). PROC MEANS #1 runs on the filtered set, PROC MEANS #2 and PROC PRINT on the final set. Percentiles follow SAS PCTLDEF=5.
 
