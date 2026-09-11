@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-7.3.2, pluggy-1.6.0 -- /home/ubuntu/.pyenv/versions/3.12.13/bin/python
+cachedir: .pytest_cache
+rootdir: /home/ubuntu/repos/sas-to-pyspark-migration
+plugins: flaky-3.8.1, anyio-4.15.1, base-url-2.1.0, Faker-40.38.0, xdist-3.8.0, playwright-0.9.0
+collecting ... collected 14 items / 13 deselected / 1 selected
+
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_data_loads_successfully PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/test_pyspark_outputs.py::TestHomeEquityPySpark::test_data_loads_successfully
+  /home/ubuntu/.pyenv/versions/3.12.13/lib/python3.12/site-packages/pyspark/testing/utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+    require_minimum_pandas_version()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================= 1 passed, 13 deselected, 1 warning in 5.03s ==================

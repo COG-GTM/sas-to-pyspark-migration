@@ -5,9 +5,6 @@ Equivalent SAS Program: sas/01_data_loading.sas
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import (
-    StructType, StructField, IntegerType, DoubleType, StringType
-)
 
 # Initialize SparkSession
 # SAS equivalent: Starting a SAS session
