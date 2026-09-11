@@ -5,7 +5,7 @@ Equivalent SAS Program: sas/02_data_cleaning.sas
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, initcap, lit
+from pyspark.sql.functions import col, when, initcap, lit, sum as spark_sum
 
 # Initialize SparkSession
 spark = SparkSession.builder \
@@ -15,6 +15,17 @@ spark = SparkSession.builder \
 
 # Load data
 df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
+
+
+def describeWithNmiss(frame, cols):
+    """describe() plus a PROC MEANS-style NMISS row (missing count per variable)."""
+    selected = frame.select(*cols)
+    nmissRow = selected.select(
+        lit("nmiss").alias("summary"),
+        *[spark_sum(when(col(c).isNull(), 1).otherwise(0)).cast("string").alias(c) for c in cols]
+    )
+    return selected.describe().union(nmissRow)
+
 
 # ------------------------------------------------------------------
 # Step 1: Create derived columns
@@ -93,15 +104,14 @@ print("=" * 60)
 print("Summary Statistics for Outlier Detection")
 print("(equivalent to PROC MEANS with percentiles)")
 print("=" * 60)
-dfFiltered.select(
-    "LOAN", "MORTDUE", "VALUE", "DEBTINC", "LTV", "CLAGE", "DEROG", "DELINQ"
-).describe().show()
+outlierCols = ["LOAN", "MORTDUE", "VALUE", "DEBTINC", "LTV", "CLAGE", "DEROG", "DELINQ"]
+describeWithNmiss(dfFiltered, outlierCols).show()
 
-# Approximate percentiles for key variables
-print("Approximate Percentiles:")
-for quantileCol in ["LOAN", "MORTDUE", "VALUE", "LTV", "DEBTINC"]:
+# Exact percentiles (relativeError=0) for every PROC MEANS variable
+print("Percentiles:")
+for quantileCol in outlierCols:
     quantiles = dfFiltered.approxQuantile(
-        quantileCol, [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99], 0.01
+        quantileCol, [0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99], 0.0
     )
     print(f"  {quantileCol}: p1={quantiles[0]}, p5={quantiles[1]}, "
           f"p25={quantiles[2]}, median={quantiles[3]}, "
@@ -130,7 +140,7 @@ print(f"Original rows: {df.count()}")
 print(f"After filtering: {dfFiltered.count()}")
 print(f"Final clean rows: {dfFinal.count()}")
 
-dfFinal.select("LOAN", "MORTDUE", "VALUE", "LTV", "DEBTINC").describe().show()
+describeWithNmiss(dfFinal, ["LOAN", "MORTDUE", "VALUE", "LTV", "DEBTINC"]).show()
 
 dfFinal.select(
     "BAD", "LOAN", "MORTDUE", "VALUE", "LTV",
