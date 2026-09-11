@@ -51,7 +51,23 @@ def find_line(lines, marker, start=0):
 
 
 def parse_show_table(lines, start, nth=1):
-    """Parse the nth DataFrame.show() table at or after `start`."""
+    """Parse the nth DataFrame.show() table at or after `start`.
+
+    Relies on the ASCII layout DataFrame.show() has used since Spark 1.x
+    (+---+ borders, |-separated cells, NULL for missing). A table that is
+    absent or truncated (e.g. the script died mid-run) surfaces as a
+    ValueError naming the marker rather than a bare IndexError.
+    """
+    try:
+        return _parse_show_table(lines, start, nth)
+    except IndexError:
+        raise ValueError(
+            f"DataFrame.show() table #{nth} not found after output line {start}: "
+            f"{lines[start].strip()!r}"
+        ) from None
+
+
+def _parse_show_table(lines, start, nth):
     i = start
     for _ in range(nth - 1):
         while not lines[i].startswith("+-"):
@@ -115,16 +131,30 @@ def load_script_output(tag, logs_dir):
 # Comparison bookkeeping
 # ----------------------------------------------------------------------------
 class Report:
+    """Two kinds of checks are kept apart so the headline total is honest:
+
+    * parity checks   - one side is parsed from the output of the pyspark/
+                        script under test, the other is pandas / SAS semantics;
+    * supplementary   - neither side is script output (dataset sanity anchors,
+                        Spark recomputations of numbers the scripts do not
+                        print, internal-consistency checks). Reported
+                        separately and never counted in the parity total.
+    """
+
     def __init__(self):
         self.rows = []
         self.sections = []
+        self._supplementary = False
 
-    def section(self, title):
-        self.sections.append((title, len(self.rows)))
+    def section(self, title, supplementary=False):
+        self.sections.append((title, len(self.rows), supplementary))
+        self._supplementary = supplementary
 
     def fmt(self, v):
         if v is None:
             return "null"
+        if isinstance(v, bool):
+            return str(v)
         if isinstance(v, float):
             return f"{v:,.4f}".rstrip("0").rstrip(".") if abs(v) < 1e6 else f"{v:,.2f}"
         return f"{v:,}" if isinstance(v, int) else str(v)
@@ -136,23 +166,37 @@ class Report:
             ok = str(independent) == str(pyspark)
         else:
             ok = abs(float(independent) - float(pyspark)) <= tol
-        self.rows.append((metric, self.fmt(independent), self.fmt(pyspark), ok, note))
+        self.rows.append((metric, self.fmt(independent), self.fmt(pyspark), ok, note, self._supplementary))
         return ok
+
+    def parity_rows(self):
+        return [r for r in self.rows if not r[5]]
+
+    def supplementary_rows(self):
+        return [r for r in self.rows if r[5]]
 
     def render(self):
         out = []
         bounds = [s[1] for s in self.sections] + [len(self.rows)]
-        for (title, start), end in zip(self.sections, bounds[1:]):
+        for (title, start, supplementary), end in zip(self.sections, bounds[1:]):
             out.append(f"\n### {title}\n")
-            out.append("| Metric | Independent (pandas / SAS semantics) | PySpark (script output) | Match |")
+            if supplementary:
+                out.append("_Supplementary: neither column is pyspark/ script output; "
+                           "not counted in the parity total._\n")
+                out.append("| Metric | Independent (pandas / SAS semantics) | Comparison value | Match |")
+            else:
+                out.append("| Metric | Independent (pandas / SAS semantics) | PySpark (script output) | Match |")
             out.append("|---|---|---|---|")
-            for metric, a, b, ok, note in self.rows[start:end]:
+            for metric, a, b, ok, note, _ in self.rows[start:end]:
                 flag = "yes" if ok else "**NO**"
                 if note:
                     flag += f" ({note})"
                 out.append(f"| {metric} | {a} | {b} | {flag} |")
-        n_ok = sum(1 for r in self.rows if r[3])
-        out.append(f"\n**{n_ok} / {len(self.rows)} checks matched.**")
+        par, sup = self.parity_rows(), self.supplementary_rows()
+        out.append(f"\n**{sum(1 for r in par if r[3])} / {len(par)} script-parity checks matched** "
+                   f"(one side parsed from pyspark/ script output).")
+        out.append(f"\n{sum(1 for r in sup if r[3])} / {len(sup)} supplementary checks matched "
+                   f"(dataset sanity / Spark recomputation / internal consistency; not script output).")
         return "\n".join(out)
 
 
@@ -198,7 +242,15 @@ def build_frames():
 
 
 def sklearn_auc(final):
-    """Plain scikit-learn logistic regression on the same features as pyspark/05."""
+    """Plain scikit-learn logistic regression on the same features as pyspark/05.
+
+    Mirrors the SAS order of operations: the DATA step keeps rows complete on
+    the six key predictors, PROC SURVEYSELECT draws an (unstratified) 70% SRS
+    from that population, and only then does PROC LOGISTIC drop rows with a
+    missing DEROG / NINQ / JOB / REASON from the training set (scored
+    validation rows with a missing predictor get a missing pred_prob and fall
+    out of the confusion matrix the same way).
+    """
     from sklearn.compose import ColumnTransformer
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import roc_auc_score
@@ -208,7 +260,12 @@ def sklearn_auc(final):
 
     numeric = ["LOAN", "MORTDUE", "VALUE", "DEBTINC", "DELINQ", "DEROG", "CLAGE", "NINQ"]
     cat = ["JOB", "REASON"]
-    model = final.dropna(subset=numeric + cat)
+    key_predictors = ["LOAN", "MORTDUE", "VALUE", "DEBTINC", "DELINQ", "CLAGE"]
+    model_data = final.dropna(subset=key_predictors)          # SAS work.model_data
+    train, valid = train_test_split(model_data, test_size=0.3, random_state=42)  # SRS, unstratified
+    train = train.dropna(subset=numeric + cat)                # PROC LOGISTIC complete cases
+    valid = valid.dropna(subset=numeric + cat)                # scored rows with pred_prob
+    model = model_data.dropna(subset=numeric + cat)
     X, y = model[numeric + cat], model["BAD"].astype(int)
 
     pipe = Pipeline([
@@ -219,12 +276,11 @@ def sklearn_auc(final):
         ])),
         ("lr", LogisticRegression(C=1e6, max_iter=5000)),  # ~unpenalised MLE, like PROC LOGISTIC
     ])
-    Xtr, Xva, ytr, yva = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
-    pipe.fit(Xtr, ytr)
-    holdout_auc = roc_auc_score(yva, pipe.predict_proba(Xva)[:, 1])
+    pipe.fit(train[numeric + cat], train["BAD"].astype(int))
+    holdout_auc = roc_auc_score(valid["BAD"].astype(int), pipe.predict_proba(valid[numeric + cat])[:, 1])
     cv = cross_val_score(pipe, X, y, cv=StratifiedKFold(5, shuffle=True, random_state=42),
                          scoring="roc_auc")
-    return len(model), holdout_auc, cv.mean(), cv.std()
+    return len(model_data), len(model), holdout_auc, cv.mean(), cv.std()
 
 
 def spark_group_stats(final_index_filter):
@@ -278,9 +334,22 @@ def main():
     rep.check("Row count (HMEQ documented: 5,960)", len(raw),
               parse_scalar(out["01"], r"Number of rows: (\d+)", int))
     rep.check("Column count", raw.shape[1], parse_scalar(out["01"], r"Number of columns: (\d+)", int))
+    sample = parse_show_table(L["01"], find_line(L["01"], "First 20 Observations"))
+    rep.check("PROC PRINT obs=20 sample: rows printed", 20, len(sample))
+    for i, r in enumerate(sample):
+        rep.check(f"obs {i + 1}: BAD / LOAN / MORTDUE / VALUE as loaded",
+                  f"{int(raw.iloc[i]['BAD'])} / {int(raw.iloc[i]['LOAN'])} / "
+                  f"{raw.iloc[i]['MORTDUE']} / {raw.iloc[i]['VALUE']}",
+                  f"{int(r['BAD'])} / {int(r['LOAN'])} / "
+                  f"{to_num(r['MORTDUE']) if to_num(r['MORTDUE']) is not None else float('nan')} / "
+                  f"{to_num(r['VALUE']) if to_num(r['VALUE']) is not None else float('nan')}")
+
+    rep.section("Dataset sanity anchors (pandas vs documented HMEQ facts; no script prints the raw BAD rate)",
+                supplementary=True)
     bad_rate = raw["BAD"].mean()
-    rep.check("BAD default rate (HMEQ documented: ~19.95%)", round(bad_rate * 100, 2),
-              round(HMEQ_BAD_RATE * 100, 2), tol=0.01, note="pandas vs documented HMEQ")
+    rep.check("Raw row count vs HMEQ documented 5,960", len(raw), HMEQ_ROWS)
+    rep.check("Raw BAD default rate % vs HMEQ documented ~19.95%", round(bad_rate * 100, 2),
+              round(HMEQ_BAD_RATE * 100, 2), tol=0.01)
     assert len(raw) == HMEQ_ROWS and abs(bad_rate - HMEQ_BAD_RATE) < 0.0005, "raw CSV is not HMEQ"
 
     # ---------------- 02 data cleaning ----------------
@@ -299,9 +368,13 @@ def main():
         rep.check(f"{c} std (sample)", round(float(s.std(ddof=1)), 4), round(to_num(desc["stddev"][c]), 4), tol=1e-4)
         rep.check(f"{c} min", float(s.min()), to_num(desc["min"][c]), tol=1e-9)
         rep.check(f"{c} max", float(s.max()), to_num(desc["max"][c]), tol=1e-9)
-    ltv_row = final.loc[(final["MORTDUE"] == 25860) & (final["VALUE"] == 39025), "LTV"]
-    rep.check("LTV spot check MORTDUE=25860 / VALUE=39025", round(25860 / 39025, 6),
-              round(float(ltv_row.iloc[0]), 6), tol=1e-6, note="pandas derived column")
+    # LTV derived column: recompute MORTDUE / VALUE for every row the script prints
+    shown = parse_show_table(L["02"], find_line(L["02"], "Final clean rows"), nth=2)
+    rep.check("LTV sample table: rows printed (show(10))", 10, len(shown))
+    for r in shown:
+        mortdue, value = to_num(r["MORTDUE"]), to_num(r["VALUE"])
+        rep.check(f"LTV = MORTDUE / VALUE for MORTDUE={mortdue:g}, VALUE={value:g}",
+                  round(mortdue / value, 6), round(to_num(r["LTV"]), 6), tol=1e-6)
 
     # ---------------- 03 aggregation ----------------
     rep.section("03 - Frequency tables (SAS PROC FREQ on work.home_equity_final; "
@@ -321,42 +394,53 @@ def main():
         m = re.search(r"Frequency Missing = (\d+)", "\n".join(L["03"][start:start + 60]))
         rep.check(f"{c}: Frequency Missing", int(final[c].isna().sum()), int(m.group(1)) if m else None)
 
-    rep.section("03 - Summary statistics by LOAN_OUTCOME (PROC MEANS n mean median)")
+    rep.section("03 - Summary statistics by LOAN_OUTCOME (PROC MEANS n mean median; var LOAN MORTDUE VALUE DEBTINC)")
     tbl = {r["LOAN_OUTCOME"]: r for r in
            parse_show_table(L["03"], find_line(L["03"], "Summary Statistics by Loan Outcome"))}
     for k, g in final.groupby("LOAN_OUTCOME"):
         r = tbl[k]
         rep.check(f"{k}: N", len(g), int(r["N"]))
-        rep.check(f"{k}: mean LOAN", rnd(g["LOAN"].mean(), 2), to_num(r["Mean_LOAN"]), tol=0.001)
-        rep.check(f"{k}: median LOAN", rnd(g["LOAN"].median(), 2), to_num(r.get("Median_LOAN")), tol=0.001)
-        rep.check(f"{k}: mean MORTDUE", rnd(g["MORTDUE"].mean(), 2), to_num(r["Mean_MORTDUE"]), tol=0.001)
-        rep.check(f"{k}: mean VALUE", rnd(g["VALUE"].mean(), 2), to_num(r["Mean_VALUE"]), tol=0.001)
-        rep.check(f"{k}: mean DEBTINC", rnd(g["DEBTINC"].mean(), 2), to_num(r["Mean_DEBTINC"]), tol=0.001)
-        rep.check(f"{k}: median DEBTINC", rnd(g["DEBTINC"].median(), 2), to_num(r.get("Median_DEBTINC")), tol=0.001)
+        for v in ["LOAN", "MORTDUE", "VALUE", "DEBTINC"]:
+            rep.check(f"{k}: mean {v}", rnd(g[v].mean(), 2), to_num(r[f"Mean_{v}"]), tol=0.001)
+            rep.check(f"{k}: median {v}", rnd(g[v].median(), 2), to_num(r.get(f"Median_{v}")), tol=0.001)
+        rep.check(f"{k}: std LOAN", rnd(g["LOAN"].std(ddof=1), 2), to_num(r["Std_LOAN"]), tol=0.001)
+        rep.check(f"{k}: min / max LOAN", f"{g['LOAN'].min():g} / {g['LOAN'].max():g}",
+                  f"{to_num(r['Min_LOAN']):g} / {to_num(r['Max_LOAN']):g}")
 
-    rep.section("03 - LOAN / DEBTINC by REASON x LOAN_OUTCOME (PROC MEANS class REASON LOAN_OUTCOME)")
-    tbl = {(key_of(r["REASON"]), r["LOAN_OUTCOME"]): r for r in
-           parse_show_table(L["03"], find_line(L["03"], "Loan Distribution by Reason and Outcome"))}
-    for (reason, outcome), g in final.groupby(["REASON", "LOAN_OUTCOME"], dropna=False):
-        key = (None if pd.isna(reason) else reason, outcome)
-        r = tbl[key]
-        label = f"{'missing' if key[0] is None else key[0]}/{outcome}"
-        rep.check(f"{label}: N", len(g), int(r["N"]))
-        rep.check(f"{label}: mean LOAN", rnd(g["LOAN"].mean(), 2), to_num(r["Mean_LOAN"]), tol=0.001)
+    rep.section("03 - LOAN / LTV / DEBTINC by REASON x LOAN_OUTCOME "
+                "(PROC MEANS class REASON LOAN_OUTCOME; missing REASON excluded by CLASS)")
+    rows = parse_show_table(L["03"], find_line(L["03"], "Loan Distribution by Reason and Outcome"))
+    tbl = {(key_of(r["REASON"]), r["LOAN_OUTCOME"]): r for r in rows}
+    groups = final.groupby(["REASON", "LOAN_OUTCOME"])
+    rep.check("Class groups in table (missing REASON excluded)", groups.ngroups, len(rows))
+    rep.check("Rows with missing REASON dropped by CLASS", int(final["REASON"].isna().sum()),
+              len(final) - sum(int(r["N"]) for r in rows))
+    for (reason, outcome), g in groups:
+        r = tbl.get((reason, outcome), {})
+        label = f"{reason}/{outcome}"
+        rep.check(f"{label}: N", len(g), to_num(r.get("N")))
+        rep.check(f"{label}: mean LOAN", rnd(g["LOAN"].mean(), 2), to_num(r.get("Mean_LOAN")), tol=0.001)
         rep.check(f"{label}: median LOAN", rnd(g["LOAN"].median(), 2), to_num(r.get("Median_LOAN")), tol=0.001)
-        rep.check(f"{label}: mean LTV", rnd(g["LTV"].mean(), 4), to_num(r["Mean_LTV"]), tol=0.00001)
-        rep.check(f"{label}: mean DEBTINC", rnd(g["DEBTINC"].mean(), 2), to_num(r["Mean_DEBTINC"]), tol=0.001)
-        rep.check(f"{label}: median DEBTINC", rnd(g["DEBTINC"].median(), 2), to_num(r.get("Median_DEBTINC")), tol=0.001)
+        rep.check(f"{label}: std LOAN", rnd(g["LOAN"].std(ddof=1), 2), to_num(r.get("Std_LOAN")), tol=0.001)
+        rep.check(f"{label}: mean LTV", rnd(g["LTV"].mean(), 4), to_num(r.get("Mean_LTV")), tol=0.00001)
+        rep.check(f"{label}: median LTV", rnd(g["LTV"].median(), 4), to_num(r.get("Median_LTV")), tol=0.00001)
+        rep.check(f"{label}: mean DEBTINC", rnd(g["DEBTINC"].mean(), 2), to_num(r.get("Mean_DEBTINC")), tol=0.001)
+        rep.check(f"{label}: median DEBTINC", rnd(g["DEBTINC"].median(), 2), to_num(r.get("Median_DEBTINC")),
+                  tol=0.001)
 
-    rep.section("03 - Default rate by JOB x REGION (PROC TABULATE)")
-    tbl = {(key_of(r["JOB"]), r["REGION"]): r for r in
-           parse_show_table(L["03"], find_line(L["03"], "Cross-tabulation: Default Rate by JOB x REGION"), nth=2)}
-    for (job, region), g in final.groupby(["JOB", "REGION"], dropna=False):
-        key = (None if pd.isna(job) else job, region)
-        r = tbl[key]
-        label = f"{'missing' if key[0] is None else key[0]} / {region}"
-        rep.check(f"{label}: N", len(g), int(r["N"]))
-        rep.check(f"{label}: default %", rnd(g["BAD"].mean() * 100, 2), to_num(r["Default_Rate_Pct"]), tol=0.001)
+    rep.section("03 - Default rate by JOB x REGION (PROC TABULATE class JOB REGION; missing JOB excluded by CLASS)")
+    rows = parse_show_table(L["03"], find_line(L["03"], "Cross-tabulation: Default Rate by JOB x REGION"), nth=2)
+    tbl = {(key_of(r["JOB"]), r["REGION"]): r for r in rows}
+    groups = final.groupby(["JOB", "REGION"])
+    rep.check("Class groups in table (missing JOB excluded)", groups.ngroups, len(rows))
+    rep.check("Rows with missing JOB dropped by CLASS", int(final["JOB"].isna().sum()),
+              len(final) - sum(int(r["N"]) for r in rows))
+    for (job, region), g in groups:
+        r = tbl.get((job, region), {})
+        label = f"{job} / {region}"
+        rep.check(f"{label}: N", len(g), to_num(r.get("N")))
+        rep.check(f"{label}: default %", rnd(g["BAD"].mean() * 100, 2), to_num(r.get("Default_Rate_Pct")),
+                  tol=0.001)
 
     rep.section("03 - Top 10 states by average loan (PROC SQL)")
     tbl = parse_show_table(L["03"], find_line(L["03"], "Top 10 States by Average Loan Amount"))
@@ -371,19 +455,35 @@ def main():
                   f"{to_num(r['avg_property_value']):.2f} / {to_num(r['default_rate_pct']):.2f}")
 
     # ---------------- 04 risk segmentation ----------------
-    rep.section("04 - Risk bucket counts (PROC FREQ on work.home_equity_risk)")
+    rep.section("04 - Risk bucket counts (PROC FREQ on work.home_equity_risk; "
+                "missing excluded from table and percent base, reported as Frequency Missing)")
     rep.check("Rows in risk dataset", len(final),
               sum(int(r["Frequency"]) for r in parse_show_table(L["04"], find_line(L["04"], "--- RISK_SEGMENT ---"))))
     for c in ["RISK_SEGMENT", "LTV_RISK_CAT", "DTI_RISK_CAT", "DELINQ_RISK_CAT"]:
-        tbl = {key_of(r[c]): int(r["Frequency"]) for r in
-               parse_show_table(L["04"], find_line(L["04"], f"--- {c} ---"))}
-        vc = final[c].value_counts(dropna=False)
+        start = find_line(L["04"], f"--- {c} ---")
+        rows = parse_show_table(L["04"], start)
+        tbl = {key_of(r[c]): r for r in rows}
+        vc = final[c].value_counts(dropna=True)
+        n_nonmissing = int(vc.sum())
         for k, v in vc.items():
-            kk = None if pd.isna(k) else k
-            rep.check(f"{c} = {'missing' if kk is None else kk}", int(v), tbl.get(kk))
-        extra = set(tbl) - {None if pd.isna(k) else k for k in vc.index}
-        if extra:
-            rep.check(f"{c}: categories only in PySpark", "", ", ".join(map(str, extra)))
+            r = tbl.get(k)
+            rep.check(f"{c} = {k}: frequency", int(v), None if r is None else int(r["Frequency"]))
+            rep.check(f"{c} = {k}: percent", rnd(v / n_nonmissing * 100, 2),
+                      None if r is None else to_num(r["Percent"]), tol=0.001)
+        rep.check(f"{c}: rows in table (missing excluded)", len(vc), len(rows))
+        m = re.search(r"Frequency Missing = (\d+)", "\n".join(L["04"][start:start + 40]))
+        rep.check(f"{c}: Frequency Missing", int(final[c].isna().sum()), int(m.group(1)) if m else None)
+
+    rep.section("04 - Default rate by LTV_RISK_CAT x DTI_RISK_CAT (PROC FREQ tables LTV*DTI*BAD; missing excluded)")
+    rows = parse_show_table(L["04"], find_line(L["04"], "Default Rates by LTV Risk and DTI Risk"))
+    tbl = {(key_of(r["LTV_RISK_CAT"]), key_of(r["DTI_RISK_CAT"])): r for r in rows}
+    groups = final.groupby(["LTV_RISK_CAT", "DTI_RISK_CAT"])
+    rep.check("Cells in table (missing excluded)", groups.ngroups, len(rows))
+    for (ltv_cat, dti_cat), g in groups:
+        r = tbl.get((ltv_cat, dti_cat), {})
+        rep.check(f"LTV {ltv_cat} x DTI {dti_cat}: N", len(g), to_num(r.get("N")))
+        rep.check(f"LTV {ltv_cat} x DTI {dti_cat}: default %", rnd(g["BAD"].mean() * 100, 2),
+                  to_num(r.get("Default_Rate_Pct")), tol=0.001)
 
     rep.section("04 - Default rate by RISK_SEGMENT (PROC MEANS class RISK_SEGMENT)")
     tbl = {r["RISK_SEGMENT"]: r for r in
@@ -398,7 +498,8 @@ def main():
 
     # ---------------- 03/04 extra: single-factor REASON / JOB stats ----------------
     if not args.skip_spark_groups:
-        rep.section("Mean / median LOAN and DEBTINC by REASON and by JOB (Spark recomputed vs pandas)")
+        rep.section("Mean / median LOAN and DEBTINC by REASON and by JOB "
+                    "(no SAS/PySpark step prints these; Spark recomputed here vs pandas)", supplementary=True)
         sg = spark_group_stats(final)
         for g in ["REASON", "JOB"]:
             for k, grp in final.groupby(g, dropna=False):
@@ -415,17 +516,18 @@ def main():
 
     # ---------------- 05 logistic regression ----------------
     rep.section("05 - Logistic regression (PROC LOGISTIC vs Spark ML; sklearn as independent reference)")
-    n_model, auc_holdout, auc_cv, auc_cv_sd = sklearn_auc(final)
+    n_model_data, n_model, auc_holdout, auc_cv, auc_cv_sd = sklearn_auc(final)
     n_spark = parse_scalar(out["05"], r"Modeling dataset size: (\d+) rows", int)
     n_train = parse_scalar(out["05"], r"Training set: (\d+) rows", int)
     n_valid = parse_scalar(out["05"], r"Validation set: (\d+) rows", int)
-    rep.check("Complete-case modelling rows", n_model, n_spark)
+    rep.check("Complete-case modelling rows (rows PROC LOGISTIC would actually use)", n_model, n_spark,
+              note=f"SAS work.model_data has {n_model_data:,} rows before PROC LOGISTIC drops incomplete ones")
     rep.check("Train + validation rows", n_model, n_train + n_valid)
     rep.check("Train share (SAS SRS samprate=0.7 is exact; Spark randomSplit is Bernoulli)", 0.70,
               round(n_train / n_spark, 3), tol=0.03, note="approximate by design")
     spark_auc = parse_scalar(out["05"], r"AUC \(Area Under ROC\): ([\d.]+)")
-    rep.check("Validation AUC (sklearn 70/30 holdout vs Spark 70/30 holdout)", round(auc_holdout, 4),
-              spark_auc, tol=0.05, note="plausibility: same neighbourhood")
+    rep.check("Validation AUC (sklearn, SAS split order, 70/30 holdout vs Spark 70/30 holdout)",
+              round(auc_holdout, 4), spark_auc, tol=0.05, note="plausibility: same neighbourhood")
     rep.check(f"Validation AUC vs sklearn 5-fold CV mean (sd {auc_cv_sd:.3f})", round(auc_cv, 4),
               spark_auc, tol=0.05, note="plausibility: same neighbourhood")
     cm = parse_show_table(L["05"], find_line(L["05"], "Confusion Matrix - Validation Set"))
@@ -435,6 +537,23 @@ def main():
     correct = sum(int(r["count"]) for r in cm if r["label"] == r["prediction"])
     rep.check("Accuracy recomputed from confusion matrix", round(correct / cm_total, 4), acc, tol=0.0001)
 
+    rep.section("05 - Predicted probability by actual outcome (PROC MEANS n mean std min p25 median p75 max class BAD; "
+                "model-specific, so checked for internal consistency only)", supplementary=True)
+    pp = {r["label"]: r for r in
+          parse_show_table(L["05"], find_line(L["05"], "Predicted Probability Distribution by Actual Outcome"))}
+    for lab in sorted(pp):
+        r = pp[lab]
+        n_label = sum(int(c["count"]) for c in cm if c["label"] == lab)
+        rep.check(f"label {lab}: N equals confusion-matrix row total", n_label, to_num(r.get("N")))
+        q = [to_num(r.get(k)) for k in ("Min", "P25", "Median", "P75", "Max")]
+        mean_pp = to_num(r.get("Mean"))
+        if None in q or mean_pp is None:
+            rep.check(f"label {lab}: n mean std min p25 median p75 max all printed", True, None)
+            continue
+        rep.check(f"label {lab}: min <= p25 <= median <= p75 <= max, all in [0, 1]", True,
+                  all(a <= b for a, b in zip(q, q[1:])) and 0 <= q[0] and q[-1] <= 1)
+        rep.check(f"label {lab}: mean within [min, max]", True, q[0] <= mean_pp <= q[-1])
+
     md = rep.render()
     print(md)
     if args.out:
@@ -443,8 +562,9 @@ def main():
     failed = [r for r in rep.rows if not r[3]]
     if failed:
         print(f"\n{len(failed)} MISMATCH(ES):", file=sys.stderr)
-        for m, a, b, _, _ in failed:
-            print(f"  - {m}: independent={a} pyspark={b}", file=sys.stderr)
+        for m, a, b, _, _, supplementary in failed:
+            kind = "supplementary" if supplementary else "parity"
+            print(f"  - [{kind}] {m}: independent={a} pyspark={b}", file=sys.stderr)
         sys.exit(1)
     print("\nALL CHECKS MATCHED", file=sys.stderr)
 

@@ -88,7 +88,9 @@ df.groupBy("LOAN_OUTCOME") \
         spark_round(spark_min("LOAN"), 2).alias("Min_LOAN"),
         spark_round(spark_max("LOAN"), 2).alias("Max_LOAN"),
         spark_round(mean("MORTDUE"), 2).alias("Mean_MORTDUE"),
+        spark_round(median("MORTDUE"), 2).alias("Median_MORTDUE"),
         spark_round(mean("VALUE"), 2).alias("Mean_VALUE"),
+        spark_round(median("VALUE"), 2).alias("Median_VALUE"),
         spark_round(mean("DEBTINC"), 2).alias("Mean_DEBTINC"),
         spark_round(median("DEBTINC"), 2).alias("Median_DEBTINC"),
     ) \
@@ -109,12 +111,15 @@ print("Cross-tabulation: Default Rate by JOB x REGION")
 print("(equivalent to PROC TABULATE)")
 print("=" * 60)
 
+# SAS CLASS processing drops rows whose class variable is missing
+dfJobRegion = df.filter(col("JOB").isNotNull() & col("REGION").isNotNull())
+
 # Use crosstab for a pivot-style view
-crossTab = df.stat.crosstab("JOB", "REGION")
+crossTab = dfJobRegion.stat.crosstab("JOB", "REGION")
 crossTab.show(truncate=False)
 
 # Detailed default rates by JOB and REGION
-df.groupBy("JOB", "REGION") \
+dfJobRegion.groupBy("JOB", "REGION") \
     .agg(
         count("*").alias("N"),
         spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct")
@@ -166,13 +171,15 @@ print("=" * 60)
 print("Loan Distribution by Reason and Outcome")
 print("=" * 60)
 
-df.groupBy("REASON", "LOAN_OUTCOME") \
+df.filter(col("REASON").isNotNull()) \
+    .groupBy("REASON", "LOAN_OUTCOME") \
     .agg(
         count("*").alias("N"),
         spark_round(mean("LOAN"), 2).alias("Mean_LOAN"),
         spark_round(median("LOAN"), 2).alias("Median_LOAN"),
         spark_round(stddev("LOAN"), 2).alias("Std_LOAN"),
         spark_round(mean("LTV"), 4).alias("Mean_LTV"),
+        spark_round(median("LTV"), 4).alias("Median_LTV"),
         spark_round(mean("DEBTINC"), 2).alias("Mean_DEBTINC"),
         spark_round(median("DEBTINC"), 2).alias("Median_DEBTINC")
     ) \

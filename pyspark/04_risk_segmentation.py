@@ -158,13 +158,16 @@ print("=" * 60)
 totalCount = dfRisk.count()
 for segCol in ["RISK_SEGMENT", "LTV_RISK_CAT", "DTI_RISK_CAT", "DELINQ_RISK_CAT"]:
     print(f"\n--- {segCol} ---")
-    dfRisk.groupBy(segCol) \
+    nonMissing = dfRisk.filter(col(segCol).isNotNull())
+    nonMissingCount = nonMissing.count()
+    nonMissing.groupBy(segCol) \
         .agg(
             count("*").alias("Frequency"),
-            spark_round(count("*") / lit(totalCount) * 100, 2).alias("Percent")
+            spark_round(count("*") / lit(nonMissingCount) * 100, 2).alias("Percent")
         ) \
         .orderBy(segCol) \
         .show(truncate=False)
+    print(f"Frequency Missing = {totalCount - nonMissingCount}")
 
 # ------------------------------------------------------------------
 # Step 4: Default rate by risk segment
@@ -201,7 +204,8 @@ print("=" * 60)
 print("Default Rates by LTV Risk and DTI Risk")
 print("=" * 60)
 
-dfRisk.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
+dfRisk.filter(col("LTV_RISK_CAT").isNotNull() & col("DTI_RISK_CAT").isNotNull()) \
+    .groupBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
     .agg(
         count("*").alias("N"),
         spark_round(mean("BAD") * 100, 2).alias("Default_Rate_Pct")
