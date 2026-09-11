@@ -1,0 +1,9 @@
+OS: Ubuntu 22.04.5 LTS
+Java: openjdk version "17.0.20" 2026-07-21
+Python: Python 3.12.13
+PySpark: 4.2.0
+pandas: 3.0.5
+scikit-learn: 1.9.1
+pytest: 7.3.2
+base commit: 32aca55aaf542c1159e9fda27297e8a30f413537
+merged HEAD: 2bb9f975569de9a9cfb3b8a2bff04272b873e4f5

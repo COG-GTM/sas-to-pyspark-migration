@@ -1,0 +1,3 @@
+SAS row base: 5337 rows
+117 / 117 checks matched
+Results written to validation/04_risk_segmentation/parity_results.md

@@ -1,0 +1,66 @@
+Parity check: pyspark/01_data_loading.py vs sas/01_data_loading.sas
+Log: validation/logs/01_data_loading.txt
+  [OK      ] PROC CONTENTS / Number of observations
+  [OK      ] PROC CONTENTS / Number of variables
+  [OK      ] PROC CONTENTS / Variable names (file order)
+  [OK      ] PROC CONTENTS type / BAD
+  [OK      ] PROC CONTENTS type / LOAN
+  [OK      ] PROC CONTENTS type / MORTDUE
+  [OK      ] PROC CONTENTS type / VALUE
+  [OK      ] PROC CONTENTS type / REASON
+  [OK      ] PROC CONTENTS type / JOB
+  [OK      ] PROC CONTENTS type / YOJ
+  [OK      ] PROC CONTENTS type / DEROG
+  [OK      ] PROC CONTENTS type / DELINQ
+  [OK      ] PROC CONTENTS type / CLAGE
+  [OK      ] PROC CONTENTS type / NINQ
+  [OK      ] PROC CONTENTS type / CLNO
+  [OK      ] PROC CONTENTS type / DEBTINC
+  [OK      ] PROC CONTENTS type / APPDATE
+  [OK      ] PROC CONTENTS type / CITY
+  [OK      ] PROC CONTENTS type / STATE
+  [OK      ] PROC CONTENTS type / DIVISION
+  [OK      ] PROC CONTENTS type / REGION
+  [OK      ] LABEL / BAD
+  [OK      ] LABEL / LOAN
+  [OK      ] LABEL / MORTDUE
+  [OK      ] LABEL / VALUE
+  [OK      ] LABEL / REASON
+  [OK      ] LABEL / JOB
+  [OK      ] LABEL / YOJ
+  [OK      ] LABEL / DEROG
+  [OK      ] LABEL / DELINQ
+  [OK      ] LABEL / CLAGE
+  [OK      ] LABEL / NINQ
+  [OK      ] LABEL / CLNO
+  [OK      ] LABEL / DEBTINC
+  [OK      ] LABEL / APPDATE
+  [OK      ] LABEL / CITY
+  [OK      ] LABEL / STATE
+  [OK      ] LABEL / DIVISION
+  [OK      ] LABEL / REGION
+  [OK      ] PROC PRINT / Preview header
+  [OK      ] PROC PRINT / Preview row count
+  [OK      ] PROC PRINT / Obs 1 (18 cells)
+  [OK      ] PROC PRINT / Obs 2 (18 cells)
+  [OK      ] PROC PRINT / Obs 3 (18 cells)
+  [OK      ] PROC PRINT / Obs 4 (18 cells)
+  [OK      ] PROC PRINT / Obs 5 (18 cells)
+  [OK      ] PROC PRINT / Obs 6 (18 cells)
+  [OK      ] PROC PRINT / Obs 7 (18 cells)
+  [OK      ] PROC PRINT / Obs 8 (18 cells)
+  [OK      ] PROC PRINT / Obs 9 (18 cells)
+  [OK      ] PROC PRINT / Obs 10 (18 cells)
+  [OK      ] PROC PRINT / Obs 11 (18 cells)
+  [OK      ] PROC PRINT / Obs 12 (18 cells)
+  [OK      ] PROC PRINT / Obs 13 (18 cells)
+  [OK      ] PROC PRINT / Obs 14 (18 cells)
+  [OK      ] PROC PRINT / Obs 15 (18 cells)
+  [OK      ] PROC PRINT / Obs 16 (18 cells)
+  [OK      ] PROC PRINT / Obs 17 (18 cells)
+  [OK      ] PROC PRINT / Obs 18 (18 cells)
+  [OK      ] PROC PRINT / Obs 19 (18 cells)
+  [OK      ] PROC PRINT / Obs 20 (18 cells)
+
+61 / 61 checks matched
+Results written to validation/01_data_loading/parity_results.md
