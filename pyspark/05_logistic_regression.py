@@ -5,7 +5,11 @@ Equivalent SAS Program: sas/05_logistic_regression.sas
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit
+from pyspark.sql.functions import (
+    col, when, lit, count, mean, stddev, min as spark_min, max as spark_max,
+    percentile, median, udf
+)
+from pyspark.sql.types import DoubleType
 from pyspark.ml.feature import (
     VectorAssembler, StringIndexer, OneHotEncoder
 )
@@ -22,7 +26,8 @@ spark = SparkSession.builder \
     .master("local[*]") \
     .getOrCreate()
 
-# Load and prepare data (replicate cleaning from scripts 02/04)
+# Load and prepare data (replicate cleaning from scripts 02/04 so that df
+# matches work.home_equity_risk, including the LTV sanity filter 0 < LTV < 5)
 df = spark.read.csv("data/home_equity.csv", header=True, inferSchema=True)
 df = df \
     .withColumn(
@@ -34,7 +39,8 @@ df = df \
     ) \
     .filter(
         col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull() &
-        (col("LOAN") > 0) & (col("VALUE") > 0)
+        (col("LOAN") > 0) & (col("VALUE") > 0) &
+        (col("LTV") > 0) & (col("LTV") < 5)
     )
 
 # ------------------------------------------------------------------
@@ -245,23 +251,22 @@ print("Predicted Probability Distribution by Actual Outcome")
 print("=" * 60)
 
 # Extract probability of default (class 1)
-from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
-
 extractProb = udf(lambda v: float(v[1]), DoubleType())
 predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
 
 predictions.groupBy("label") \
     .agg(
-        {"pred_prob": "count", "pred_prob": "mean"}
+        count("pred_prob").alias("N"),
+        mean("pred_prob").alias("Mean"),
+        stddev("pred_prob").alias("Std"),
+        spark_min("pred_prob").alias("Min"),
+        percentile("pred_prob", 0.25).alias("P25"),
+        median("pred_prob").alias("Median"),
+        percentile("pred_prob", 0.75).alias("P75"),
+        spark_max("pred_prob").alias("Max")
     ) \
-    .show()
-
-# Detailed statistics
-for labelVal in [0.0, 1.0]:
-    subset = predictions.filter(col("label") == labelVal)
-    print(f"\nActual BAD = {int(labelVal)}:")
-    subset.select("pred_prob").describe().show()
+    .orderBy("label") \
+    .show(truncate=False)
 
 # Clean up
 spark.stop()

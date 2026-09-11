@@ -1,0 +1,89 @@
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+/home/ubuntu/.pyenv/versions/3.12.13/lib/python3.12/site-packages/pyspark/testing/utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+============================================================
+Distribution of Loans by Risk Segment
+(equivalent to PROC FREQ)
+============================================================
+
+--- RISK_SEGMENT ---
++--------------+---------+-------+
+|RISK_SEGMENT  |Frequency|Percent|
++--------------+---------+-------+
+|High Risk     |427      |8.0    |
+|Low Risk      |3118     |58.42  |
+|Medium Risk   |1776     |33.28  |
+|Very High Risk|16       |0.3    |
++--------------+---------+-------+
+
+Frequency Missing = 0
+
+--- LTV_RISK_CAT ---
++------------+---------+-------+
+|LTV_RISK_CAT|Frequency|Percent|
++------------+---------+-------+
+|High        |1239     |23.22  |
+|Low         |1131     |21.19  |
+|Medium      |2967     |55.59  |
++------------+---------+-------+
+
+Frequency Missing = 0
+
+--- DTI_RISK_CAT ---
++------------+---------+-------+
+|DTI_RISK_CAT|Frequency|Percent|
++------------+---------+-------+
+|High        |796      |18.72  |
+|Low         |1122     |26.38  |
+|Medium      |2293     |53.91  |
+|Very High   |42       |0.99   |
++------------+---------+-------+
+
+Frequency Missing = 1084
+
+--- DELINQ_RISK_CAT ---
++---------------+---------+-------+
+|DELINQ_RISK_CAT|Frequency|Percent|
++---------------+---------+-------+
+|High           |145      |2.93   |
+|Low            |598      |12.09  |
+|Medium         |332      |6.71   |
+|None           |3872     |78.27  |
++---------------+---------+-------+
+
+Frequency Missing = 390
+============================================================
+Average Default Rate by Risk Segment
+(equivalent to PROC MEANS with CLASS)
+============================================================
++--------------+----+----------------+--------+-------+-----------+
+|RISK_SEGMENT  |N   |Default_Rate_Pct|Avg_LOAN|Avg_LTV|Avg_DEBTINC|
++--------------+----+----------------+--------+-------+-----------+
+|High Risk     |427 |28.34           |14481.26|0.8763 |40.59      |
+|Low Risk      |3118|15.23           |20244.29|0.6127 |32.07      |
+|Medium Risk   |1776|21.68           |16580.46|0.7748 |36.0       |
+|Very High Risk|16  |100.0           |17693.75|1.017  |65.78      |
++--------------+----+----------------+--------+-------+-----------+
+
+============================================================
+Default Rates by LTV Risk and DTI Risk
+============================================================
++------------+------------+----+----------------+
+|LTV_RISK_CAT|DTI_RISK_CAT|N   |Default_Rate_Pct|
++------------+------------+----+----------------+
+|High        |High        |191 |16.23           |
+|High        |Low         |250 |6.0             |
+|High        |Medium      |582 |7.56            |
+|High        |Very High   |13  |100.0           |
+|Low         |High        |152 |13.82           |
+|Low         |Low         |339 |4.13            |
+|Low         |Medium      |383 |7.57            |
+|Low         |Very High   |9   |100.0           |
+|Medium      |High        |453 |13.02           |
+|Medium      |Low         |533 |4.88            |
+|Medium      |Medium      |1328|5.2             |
+|Medium      |Very High   |20  |100.0           |
++------------+------------+----+----------------+
+

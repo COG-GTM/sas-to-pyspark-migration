@@ -1,0 +1,76 @@
+============================================================
+Column Labels (SAS-style variable labels)
+============================================================
+  BAD          -> Loan Status (1=Default, 0=Paid)
+  LOAN         -> Amount of Loan Request
+  MORTDUE      -> Amount Due on Existing Mortgage
+  VALUE        -> Value of Current Property
+  REASON       -> Loan Purpose (HomeImp or DebtCon)
+  JOB          -> Job Category
+  YOJ          -> Years at Present Job
+  DEROG        -> Number of Derogatory Reports
+  DELINQ       -> Number of Delinquent Credit Lines
+  CLAGE        -> Age of Oldest Credit Line (months)
+  NINQ         -> Number of Recent Credit Inquiries
+  CLNO         -> Number of Credit Lines
+  DEBTINC      -> Debt to Income Ratio
+  APPDATE      -> Loan Application Date
+  CITY         -> City
+  STATE        -> State
+  DIVISION     -> Census Division
+  REGION       -> Census Region
+
+============================================================
+Dataset Schema (equivalent to PROC CONTENTS)
+============================================================
+root
+ |-- BAD: integer (nullable = true)
+ |-- LOAN: integer (nullable = true)
+ |-- MORTDUE: double (nullable = true)
+ |-- VALUE: double (nullable = true)
+ |-- REASON: string (nullable = true)
+ |-- JOB: string (nullable = true)
+ |-- YOJ: double (nullable = true)
+ |-- DEROG: integer (nullable = true)
+ |-- DELINQ: integer (nullable = true)
+ |-- CLAGE: double (nullable = true)
+ |-- NINQ: integer (nullable = true)
+ |-- CLNO: integer (nullable = true)
+ |-- DEBTINC: double (nullable = true)
+ |-- APPDATE: integer (nullable = true)
+ |-- CITY: string (nullable = true)
+ |-- STATE: string (nullable = true)
+ |-- DIVISION: string (nullable = true)
+ |-- REGION: string (nullable = true)
+
+Number of rows: 5960
+Number of columns: 18
+
+============================================================
+First 20 Observations (equivalent to PROC PRINT obs=20)
+============================================================
++---+----+--------+--------+-------+------+----+-----+------+------------+----+----+------------+-------+----------+------------+------------------+---------+
+|BAD|LOAN|MORTDUE |VALUE   |REASON |JOB   |YOJ |DEROG|DELINQ|CLAGE       |NINQ|CLNO|DEBTINC     |APPDATE|CITY      |STATE       |DIVISION          |REGION   |
++---+----+--------+--------+-------+------+----+-----+------+------------+----+----+------------+-------+----------+------------+------------------+---------+
+|1  |1100|25860.0 |39025.0 |HomeImp|Other |10.5|0    |0     |94.366666667|1   |9   |NULL        |22040  |oregon    |Wisconsin   |East North Central|Midwest  |
+|1  |1300|70053.0 |68400.0 |HomeImp|Other |7.0 |0    |2     |121.83333333|0   |14  |NULL        |22229  |churchton |Maryland    |South Atlantic    |South    |
+|1  |1500|13500.0 |16700.0 |HomeImp|Other |4.0 |0    |0     |149.46666667|1   |10  |NULL        |21396  |orcas     |Washington  |Pacific           |West     |
+|1  |1500|NULL    |NULL    |NULL   |NULL  |NULL|NULL |NULL  |NULL        |NULL|NULL|NULL        |22213  |hastings  |Florida     |South Atlantic    |South    |
+|0  |1700|97800.0 |112000.0|HomeImp|Office|3.0 |0    |0     |93.333333333|0   |14  |NULL        |22329  |wilmington|California  |Pacific           |West     |
+|1  |1700|30548.0 |40320.0 |HomeImp|Other |9.0 |0    |0     |101.46600191|1   |8   |37.113613558|21534  |olympia   |Washington  |Pacific           |West     |
+|1  |1800|48649.0 |57037.0 |HomeImp|Other |5.0 |3    |2     |77.1        |1   |17  |NULL        |21936  |williston |Florida     |South Atlantic    |South    |
+|1  |1800|28502.0 |43034.0 |HomeImp|Other |11.0|0    |0     |88.766029879|0   |8   |36.884894093|21804  |longview  |Washington  |Pacific           |West     |
+|1  |2000|32700.0 |46740.0 |HomeImp|Other |3.0 |0    |2     |216.93333333|1   |12  |NULL        |21724  |elma      |Washington  |Pacific           |West     |
+|1  |2000|NULL    |62250.0 |HomeImp|Sales |16.0|0    |0     |115.8       |0   |13  |NULL        |21713  |montclair |New Jersey  |Middle Atlantic   |Northeast|
+|1  |2000|22608.0 |NULL    |NULL   |NULL  |18.0|NULL |NULL  |NULL        |NULL|NULL|NULL        |22116  |whittier  |California  |Pacific           |West     |
+|1  |2000|20627.0 |29800.0 |HomeImp|Office|11.0|0    |1     |122.53333333|1   |9   |NULL        |20919  |orlando   |Florida     |South Atlantic    |South    |
+|1  |2000|45000.0 |55000.0 |HomeImp|Other |3.0 |0    |0     |86.066666667|2   |25  |NULL        |22438  |elm grove |Wisconsin   |East North Central|Midwest  |
+|0  |2000|64536.0 |87400.0 |NULL   |Mgr   |2.5 |0    |0     |147.13333333|0   |24  |NULL        |22453  |hatboro   |Pennsylvania|Middle Atlantic   |Northeast|
+|1  |2100|71000.0 |83850.0 |HomeImp|Other |8.0 |0    |1     |123.0       |0   |16  |NULL        |21128  |linden    |Michigan    |East North Central|Midwest  |
+|1  |2200|24280.0 |34687.0 |HomeImp|Other |NULL|0    |1     |300.86666667|0   |8   |NULL        |21580  |wildomar  |California  |Pacific           |West     |
+|1  |2200|90957.0 |102600.0|HomeImp|Mgr   |7.0 |2    |6     |122.9       |1   |22  |NULL        |21900  |minier    |Illinois    |East North Central|Midwest  |
+|1  |2200|23030.0 |NULL    |NULL   |NULL  |19.0|NULL |NULL  |NULL        |NULL|NULL|3.7113122995|21657  |los banos |California  |Pacific           |West     |
+|1  |2300|28192.0 |40150.0 |HomeImp|Other |4.5 |0    |0     |54.6        |1   |16  |NULL        |21687  |anchorage |Alaska      |Pacific           |West     |
+|0  |2300|102370.0|120953.0|HomeImp|Office|2.0 |0    |0     |90.992533467|0   |13  |31.588503178|22593  |lufkin    |Texas       |West South Central|South    |
++---+----+--------+--------+-------+------+----+-----+------+------------+----+----+------------+-------+----------+------------+------------------+---------+
+only showing top 20 rows

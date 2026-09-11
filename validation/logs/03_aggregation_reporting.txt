@@ -1,0 +1,138 @@
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+/home/ubuntu/.pyenv/versions/3.12.13/lib/python3.12/site-packages/pyspark/testing/utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+============================================================
+Frequency Tables (equivalent to PROC FREQ)
+============================================================
+
+--- JOB ---
++-------+---------+-------+
+|JOB    |Frequency|Percent|
++-------+---------+-------+
+|Other  |2070     |40.11  |
+|ProfExe|1242     |24.07  |
+|Office |871      |16.88  |
+|Mgr    |704      |13.64  |
+|Self   |176      |3.41   |
+|Sales  |98       |1.9    |
++-------+---------+-------+
+
+Frequency Missing = 176
+
+--- REASON ---
++-------+---------+-------+
+|REASON |Frequency|Percent|
++-------+---------+-------+
+|DebtCon|3665     |70.78  |
+|HomeImp|1513     |29.22  |
++-------+---------+-------+
+
+Frequency Missing = 159
+
+--- LOAN_OUTCOME ---
++------------+---------+-------+
+|LOAN_OUTCOME|Frequency|Percent|
++------------+---------+-------+
+|Paid        |4340     |81.32  |
+|Default     |997      |18.68  |
++------------+---------+-------+
+
+Frequency Missing = 0
+
+--- REGION ---
++---------+---------+-------+
+|REGION   |Frequency|Percent|
++---------+---------+-------+
+|South    |2039     |38.2   |
+|West     |1266     |23.72  |
+|Midwest  |1112     |20.84  |
+|Northeast|920      |17.24  |
++---------+---------+-------+
+
+Frequency Missing = 0
+============================================================
+Summary Statistics by Loan Outcome (equivalent to PROC MEANS)
+============================================================
++------------+----+---------+-----------+--------+--------+--------+------------+--------------+----------+------------+------------+--------------+
+|LOAN_OUTCOME|N   |Mean_LOAN|Median_LOAN|Std_LOAN|Min_LOAN|Max_LOAN|Mean_MORTDUE|Median_MORTDUE|Mean_VALUE|Median_VALUE|Mean_DEBTINC|Median_DEBTINC|
++------------+----+---------+-----------+--------+--------+--------+------------+--------------+----------+------------+------------+--------------+
+|Default     |997 |16621.97 |14800.0    |10944.47|1100    |77400   |69092.82    |60000.0       |98876.57  |84624.0     |40.52       |38.36         |
+|Paid        |4340|19000.71 |16900.0    |11019.7 |1700    |89900   |74199.94    |66724.0       |106720.79 |94273.0     |33.73       |34.93         |
++------------+----+---------+-----------+--------+--------+--------+------------+--------------+----------+------------+------------+--------------+
+
+============================================================
+Cross-tabulation: Default Rate by JOB x REGION
+(equivalent to PROC TABULATE)
+============================================================
++----------+-------+---------+-----+----+
+|JOB_REGION|Midwest|Northeast|South|West|
++----------+-------+---------+-----+----+
+|Sales     |20     |17       |38   |23  |
+|Office    |195    |145      |324  |207 |
+|ProfExe   |272    |212      |470  |288 |
+|Self      |37     |27       |70   |42  |
+|Other     |399    |365      |801  |505 |
+|Mgr       |150    |130      |265  |159 |
++----------+-------+---------+-----+----+
+
++-------+---------+---+----------------+
+|JOB    |REGION   |N  |Default_Rate_Pct|
++-------+---------+---+----------------+
+|Mgr    |Midwest  |150|21.33           |
+|Mgr    |Northeast|130|26.92           |
+|Mgr    |South    |265|19.62           |
+|Mgr    |West     |159|22.01           |
+|Office |Midwest  |195|14.87           |
+|Office |Northeast|145|8.97            |
+|Office |South    |324|12.35           |
+|Office |West     |207|11.59           |
+|Other  |Midwest  |399|20.55           |
+|Other  |Northeast|365|21.92           |
+|Other  |South    |801|20.6            |
+|Other  |West     |505|25.15           |
+|ProfExe|Midwest  |272|13.97           |
+|ProfExe|Northeast|212|13.21           |
+|ProfExe|South    |470|16.38           |
+|ProfExe|West     |288|15.63           |
+|Sales  |Midwest  |20 |25.0            |
+|Sales  |Northeast|17 |29.41           |
+|Sales  |South    |38 |39.47           |
+|Sales  |West     |23 |47.83           |
+|Self   |Midwest  |37 |21.62           |
+|Self   |Northeast|27 |33.33           |
+|Self   |South    |70 |41.43           |
+|Self   |West     |42 |11.9            |
++-------+---------+---+----------------+
+
+============================================================
+Top 10 States by Average Loan Amount (equivalent to PROC SQL)
+============================================================
++--------------------+---------+--------+------------------+----------------+
+|STATE               |num_loans|avg_loan|avg_property_value|default_rate_pct|
++--------------------+---------+--------+------------------+----------------+
+|Vermont             |11       |25672.73|116467.27         |9.09            |
+|Rhode Island        |19       |23557.89|116219.63         |26.32           |
+|Nebraska            |33       |22106.06|118060.85         |12.12           |
+|Arkansas            |47       |21444.68|102673.72         |14.89           |
+|Alaska              |13       |21215.38|106543.23         |7.69            |
+|Delaware            |18       |20638.89|97622.06          |27.78           |
+|District of Columbia|12       |20575.0 |95766.75          |16.67           |
+|South Dakota        |15       |20406.67|115230.53         |13.33           |
+|Connecticut         |56       |19894.64|98450.11          |32.14           |
+|Pennsylvania        |207      |19728.99|110177.43         |18.84           |
++--------------------+---------+--------+------------------+----------------+
+
+============================================================
+Loan Distribution by Reason and Outcome
+============================================================
++-------+------------+----+---------+-----------+--------+--------+----------+------------+--------------+
+|REASON |LOAN_OUTCOME|N   |Mean_LOAN|Median_LOAN|Std_LOAN|Mean_LTV|Median_LTV|Mean_DEBTINC|Median_DEBTINC|
++-------+------------+----+---------+-----------+--------+--------+----------+------------+--------------+
+|DebtCon|Default     |655 |18293.13 |16000.0    |10172.6 |0.7009  |0.7241    |40.85       |39.14         |
+|DebtCon|Paid        |3010|19964.42 |18050.0    |10456.56|0.698   |0.7181    |33.96       |35.19         |
+|HomeImp|Default     |310 |12839.35 |10000.0    |11635.96|0.6688  |0.7107    |38.49       |36.37         |
+|HomeImp|Paid        |1203|16848.63 |13600.0    |12409.84|0.6717  |0.7256    |33.22       |34.39         |
++-------+------------+----+---------+-----------+--------+--------+----------+------------+--------------+
+

@@ -1,0 +1,64 @@
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+Using Spark's default log4j profile: org/apache/spark/log4j2-defaults.properties
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+/home/ubuntu/.pyenv/versions/3.12.13/lib/python3.12/site-packages/pyspark/testing/utils.py:127: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+/home/ubuntu/.pyenv/versions/3.12.13/lib/python3.12/site-packages/pyspark/sql/udf.py:116: FutureWarning: PySpark does not yet fully support pandas >= 3.0.0. Some features may not work correctly. It is recommended to use pandas < 3.0.0 for now.
+  require_minimum_pandas_version()
+[Stage 73:>                                                         (0 + 1) / 1]                                                                                Modeling dataset size: 3532 rows
+Training set: 2528 rows
+Validation set: 1004 rows
+
+============================================================
+Training Logistic Regression Model
+============================================================
+
+Intercept: -4.7434
+Number of features: 16
+
+Coefficients (non-zero):
+  Feature 3: 0.067405
+  Feature 4: 0.574399
+  Feature 5: 0.576156
+  Feature 6: -0.002746
+  Feature 7: 0.080923
+  Feature 9: -0.093969
+  Feature 10: -0.282876
+  Feature 12: 0.032119
+  Feature 13: 0.907138
+
+============================================================
+Confusion Matrix - Validation Set
+(equivalent to PROC FREQ tables BAD * PREDICTED_BAD)
+============================================================
++-----+----------+-----+
+|label|prediction|count|
++-----+----------+-----+
+|  0.0|       0.0|  907|
+|  0.0|       1.0|    2|
+|  1.0|       0.0|   80|
+|  1.0|       1.0|   15|
++-----+----------+-----+
+
+============================================================
+Model Performance Metrics
+(equivalent to PROC LOGISTIC concordance/AUC)
+============================================================
+
+AUC (Area Under ROC): 0.8052
+AUPR (Area Under PR Curve): 0.4864
+accuracy: 0.9183
+weightedPrecision: 0.9155
+weightedRecall: 0.9183
+f1: 0.8916
+
+============================================================
+Predicted Probability Distribution by Actual Outcome
+============================================================
++-----+---+-------------------+-------------------+--------------------+-------------------+--------------------+-------------------+------------------+
+|label|N  |Mean               |Std                |Min                 |P25                |Median              |P75                |Max               |
++-----+---+-------------------+-------------------+--------------------+-------------------+--------------------+-------------------+------------------+
+|0.0  |909|0.07020944740980528|0.05759071600193365|0.006289572625061024|0.03854525057845448|0.057369454226216976|0.08170188985003812|0.5532940825148502|
+|1.0  |95 |0.2650752970500474 |0.27870468254277575|0.011062558002913003|0.06926202354755012|0.1292377783838432  |0.3890562786058162 |0.9738322789029115|
++-----+---+-------------------+-------------------+--------------------+-------------------+--------------------+-------------------+------------------+
+
