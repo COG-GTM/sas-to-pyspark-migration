@@ -90,6 +90,21 @@ Or with unittest directly:
 python -m unittest tests.test_pyspark_outputs -v
 ```
 
+### Semantics-Preserving Conversion + Parity Test
+
+`parity/sas_03_aggregation_reporting.py` is a second conversion of
+`sas/03_aggregation_reporting.sas` that preserves the SAS DATA step and PROC
+semantics exactly (missing-value comparison rules, `PROPCASE` delimiters,
+missing-level exclusion in `PROC FREQ`/`CLASS`/`PROC TABULATE`, `PROC SQL`
+`outobs`/`having`). `tests/test_parity_03_aggregation_reporting.py` runs it
+against the sample data and diffs every step's output against the expected SAS
+output in `tests/expected_sas_output/` (see the README there for provenance).
+
+```bash
+python parity/sas_03_aggregation_reporting.py [output_dir]   # print / write each step's result
+python -m pytest tests/test_parity_03_aggregation_reporting.py -v
+```
+
 ---
 
 ## Dataset
