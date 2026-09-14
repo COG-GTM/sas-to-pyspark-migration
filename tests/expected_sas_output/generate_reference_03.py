@@ -24,7 +24,7 @@ Run from the repository root:
 import csv
 import os
 import statistics
-from collections import Counter, OrderedDict, defaultdict
+from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
