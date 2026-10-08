@@ -139,7 +139,7 @@ sas-to-pyspark-migration/
 ├── pyspark/
 │   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
 │   ├── 02_data_cleaning.py                    # withColumn/when, null flags, filter, summary stats
-│   ├── 03_aggregation_reporting.py            # groupBy/agg, crosstab, spark.sql
+│   ├── 03_aggregation_reporting.py            # groupBy/agg, pivot, spark.sql
 │   ├── 04_risk_segmentation.py                # when() buckets, risk score, segment default rates
 │   └── 05_logistic_regression.py              # pyspark.ml Pipeline, LogisticRegression, AUC
 ├── migration_guide/
