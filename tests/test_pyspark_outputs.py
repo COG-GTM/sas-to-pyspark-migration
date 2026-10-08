@@ -6,6 +6,9 @@ Ensures correctness of the migrated SAS-to-PySpark logic.
 
 import unittest
 import os
+import re
+import subprocess
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, lit, mean, count
 
@@ -28,6 +31,7 @@ class TestHomeEquityPySpark(unittest.TestCase):
         projectRoot = os.path.dirname(testDir)
         dataPath = os.path.join(projectRoot, "data", "home_equity.csv")
 
+        cls.projectRoot = projectRoot
         cls.df = cls.spark.read.csv(dataPath, header=True, inferSchema=True)
 
     @classmethod
@@ -137,6 +141,83 @@ class TestHomeEquityPySpark(unittest.TestCase):
         self.assertEqual(
             dfFiltered.filter(col("BAD").isNull()).count(), 0
         )
+
+    def test_missing_flags(self):
+        """Verify <COL>_MISS flags are 1 for nulls and 0 otherwise."""
+        flagColumns = [
+            "LOAN", "MORTDUE", "VALUE", "YOJ", "DEROG", "DELINQ", "CLAGE", "NINQ"
+        ]
+        dfFlags = self.df.select(
+            "*",
+            *[when(col(c).isNull(), lit(1)).otherwise(lit(0)).alias(f"{c}_MISS")
+              for c in flagColumns]
+        )
+        for c in flagColumns:
+            self.assertIn(f"{c}_MISS", dfFlags.columns)
+            flagged = dfFlags.filter(col(f"{c}_MISS") == 1).count()
+            self.assertEqual(flagged, self.df.filter(col(c).isNull()).count())
+            mismatched = dfFlags.filter(
+                (col(f"{c}_MISS") == 0) & col(c).isNull()
+            ).count()
+            self.assertEqual(mismatched, 0)
+
+    def _expectedCleaningCounts(self):
+        """Row counts after the step 3 and step 5 filters of 02_data_cleaning."""
+        dfFiltered = self.df.withColumn(
+            "LTV",
+            when(
+                (col("VALUE").isNotNull()) &
+                (col("MORTDUE").isNotNull()) &
+                (col("VALUE") > 0),
+                col("MORTDUE") / col("VALUE")
+            )
+        ).filter(
+            col("LOAN").isNotNull() &
+            col("VALUE").isNotNull() &
+            col("BAD").isNotNull()
+        )
+        dfFinal = dfFiltered.filter(
+            (col("LTV") > 0) & (col("LTV") < 5) &
+            (col("LOAN") > 0) & (col("VALUE") > 0)
+        )
+        return dfFiltered.count(), dfFinal, dfFinal.count()
+
+    def test_final_dataset_filters(self):
+        """Verify the final dataset keeps only sane LTV, LOAN, VALUE rows."""
+        filteredCount, dfFinal, finalCount = self._expectedCleaningCounts()
+        self.assertGreater(finalCount, 0)
+        self.assertLessEqual(finalCount, filteredCount)
+        self.assertEqual(
+            dfFinal.filter(
+                col("LTV").isNull() | (col("LTV") <= 0) | (col("LTV") >= 5) |
+                (col("LOAN") <= 0) | (col("VALUE") <= 0)
+            ).count(),
+            0
+        )
+
+    def test_data_cleaning_script_runs(self):
+        """Run pyspark/02_data_cleaning.py and verify its printed summaries."""
+        result = subprocess.run(
+            [sys.executable, os.path.join("pyspark", "02_data_cleaning.py")],
+            cwd=self.projectRoot,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        output = result.stdout
+
+        self.assertIn("Summary Statistics for Outlier Detection", output)
+        self.assertIn("Clean Dataset Summary", output)
+        self.assertIn("First 10 Observations", output)
+        self.assertIn("|nmiss", output)
+        for header in ["BAD", "LOAN", "MORTDUE", "VALUE", "LTV",
+                       "LOAN_OUTCOME", "DEBTINC", "JOB", "REASON"]:
+            self.assertIn(f"|{header}", output)
+
+        filteredCount, _, finalCount = self._expectedCleaningCounts()
+        rowCounts = [int(n) for n in re.findall(r"Number of rows: (\d+)", output)]
+        self.assertEqual(rowCounts, [filteredCount, finalCount])
 
     # ------------------------------------------------------------------
     # Test 03: Aggregation and Reporting
