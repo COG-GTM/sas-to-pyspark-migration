@@ -24,12 +24,12 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 | # | SAS Program | PySpark Script | Description |
 |---|---|---|---|
 | 1 | `sas/01_data_loading.sas` | `pyspark/01_data_loading.py` | Load CSV, apply labels/formats, inspect metadata, preview data |
+| 2 | `sas/02_data_cleaning.sas` | `pyspark/02_data_cleaning.py` | Derive LTV/LOAN_OUTCOME, flag missing values, filter critical fields, outlier statistics, final clean dataset |
 
 ### To be migrated
 
 The remaining SAS programs are included as migration targets and have not yet been ported to PySpark:
 
-- `sas/02_data_cleaning.sas`
 - `sas/03_aggregation_reporting.sas`
 - `sas/04_risk_segmentation.sas`
 - `sas/05_logistic_regression.sas`
