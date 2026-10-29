@@ -430,18 +430,26 @@ print(f"Hosmer and Lemeshow Goodness-of-Fit Test: Chi-Square={hlChiSq:.4f} "
 #   run;
 #
 # Note: PROC PLM leaves pred_prob missing for rows with a missing
-# selected predictor; Spark ML cannot score those rows, so they are
-# excluded and reported.
+# selected predictor. Spark ML cannot score those rows, so they are
+# scored separately and appended back with pred_prob = null, keeping
+# every validation row in work.valid_scored.
 # ------------------------------------------------------------------
-validScoreable = completeCases(valid, selected)
+scoreableCondition = lit(True)
+for effect in selected:
+    scoreableCondition = scoreableCondition & col(effect).isNotNull()
+validScoreable = valid.filter(scoreableCondition)
+validUnscoreable = valid.filter(~scoreableCondition)
+
 print("\n" + "=" * 60)
 print("Scoring Validation Set (work.valid_scored)")
 print("=" * 60)
-print(f"Validation rows not scored (missing selected predictor): "
-      f"{valid.count() - validScoreable.count()}")
+print(f"Validation rows not scored (missing selected predictor, pred_prob = null): "
+      f"{validUnscoreable.count()}")
 
 validScored = logitModel.transform(validScoreable) \
-    .withColumn("pred_prob", vector_to_array(col("probability"))[1])
+    .withColumn("pred_prob", vector_to_array(col("probability"))[1]) \
+    .select(*valid.columns, "pred_prob") \
+    .unionByName(validUnscoreable.withColumn("pred_prob", lit(None).cast("double")))
 
 # ------------------------------------------------------------------
 # Step 5: Create predicted classes and confusion matrix
@@ -453,6 +461,10 @@ validScored = logitModel.transform(validScoreable) \
 #   proc freq data=work.valid_scored;
 #       tables BAD * PREDICTED_BAD / nopercent norow nocol;
 #   run;
+#
+# Note: SAS treats a missing pred_prob as smaller than 0.5, so unscored
+# rows get PREDICTED_BAD = 0. In Spark, null >= 0.5 is null and falls
+# through to otherwise(0), giving the same result.
 # ------------------------------------------------------------------
 validScored = validScored.withColumn(
     "PREDICTED_BAD",
@@ -553,6 +565,8 @@ print(f"Area under ROC curve (BinaryClassificationEvaluator): {auc:.4f}")
 #       class BAD;
 #       var pred_prob;
 #   run;
+#
+# Note: count/mean/etc. ignore null pred_prob, like PROC MEANS N.
 # ------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("Predicted Probability Distribution by Actual Outcome")
