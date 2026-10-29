@@ -23,7 +23,7 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 |---|---|---|---|---|
 | 1 | `sas/01_data_loading.sas` | `pyspark/01_data_loading.py` | Load CSV, apply labels/formats, inspect metadata, preview data | ✅ Migrated |
 | 2 | `sas/02_data_cleaning.sas` | Not yet created | DATA step cleaning, arrays, missing-value handling, PROC MEANS | ⏳ Pending |
-| 3 | `sas/03_aggregation_reporting.sas` | Not yet created | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ⏳ Pending |
+| 3 | `sas/03_aggregation_reporting.sas` | `pyspark/03_aggregation_reporting.py` | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ✅ Migrated |
 | 4 | `sas/04_risk_segmentation.sas` | Not yet created | PROC FORMAT, composite risk scoring, segment frequencies | ⏳ Pending |
 | 5 | `sas/05_logistic_regression.sas` | Not yet created | PROC LOGISTIC, stepwise selection, ROC/AUC | ⏳ Pending |
 
