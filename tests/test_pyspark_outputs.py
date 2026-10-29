@@ -6,6 +6,8 @@ Ensures correctness of the migrated SAS-to-PySpark logic.
 
 import unittest
 import os
+import subprocess
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, lit, mean, count
 
@@ -137,6 +139,19 @@ class TestHomeEquityPySpark(unittest.TestCase):
         self.assertEqual(
             dfFiltered.filter(col("BAD").isNull()).count(), 0
         )
+
+    def test_data_cleaning_script_runs(self):
+        """Smoke test: pyspark/02_data_cleaning.py runs end-to-end."""
+        projectRoot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        result = subprocess.run(
+            [sys.executable, os.path.join("pyspark", "02_data_cleaning.py")],
+            cwd=projectRoot, capture_output=True, text=True, timeout=600
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        self.assertIn("Summary Statistics for Outlier Detection", result.stdout)
+        self.assertIn("Clean Dataset Summary", result.stdout)
+        self.assertIn("Rows in final clean dataset:", result.stdout)
+        self.assertIn("LOAN_OUTCOME", result.stdout)
 
     # ------------------------------------------------------------------
     # Test 03: Aggregation and Reporting
