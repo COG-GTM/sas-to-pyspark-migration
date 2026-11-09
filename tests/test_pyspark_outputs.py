@@ -6,6 +6,9 @@ Ensures correctness of the migrated SAS-to-PySpark logic.
 
 import unittest
 import os
+import re
+import subprocess
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, lit, mean, count
 
@@ -28,6 +31,7 @@ class TestHomeEquityPySpark(unittest.TestCase):
         projectRoot = os.path.dirname(testDir)
         dataPath = os.path.join(projectRoot, "data", "home_equity.csv")
 
+        cls.projectRoot = projectRoot
         cls.df = cls.spark.read.csv(dataPath, header=True, inferSchema=True)
 
     @classmethod
@@ -313,6 +317,184 @@ class TestHomeEquityPySpark(unittest.TestCase):
             for row in dfRisk.select("RISK_SEGMENT").distinct().collect()
         )
         self.assertTrue(actualSegments.issubset(validSegments))
+
+    def _buildRiskDataset(self, df):
+        """Rebuild work.home_equity_risk as in pyspark/04_risk_segmentation.py."""
+        dfFinal = df.withColumn(
+            "LTV",
+            when(
+                (col("VALUE").isNotNull()) & (col("MORTDUE").isNotNull()) & (col("VALUE") > 0),
+                col("MORTDUE") / col("VALUE")
+            )
+        ).filter(
+            col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull()
+        ).filter(
+            (col("LTV") > 0) & (col("LTV") < 5) & (col("LOAN") > 0) & (col("VALUE") > 0)
+        )
+        ltvScore = when(col("LTV").isNull(), lit(0)) \
+            .when(col("LTV") >= 0.80, lit(3)) \
+            .when(col("LTV") >= 0.60, lit(1.5)) \
+            .otherwise(lit(0))
+        dtiScore = when(col("DEBTINC").isNull(), lit(0)) \
+            .when(col("DEBTINC") >= 50, lit(3)) \
+            .when(col("DEBTINC") >= 40, lit(2)) \
+            .when(col("DEBTINC") >= 30, lit(1)) \
+            .otherwise(lit(0))
+        delinqScore = when(col("DELINQ").isNull(), lit(0)) \
+            .when(col("DELINQ") >= 4, lit(2)) \
+            .when(col("DELINQ") >= 2, lit(1.5)) \
+            .when(col("DELINQ") == 1, lit(0.5)) \
+            .otherwise(lit(0))
+        derogScore = when(col("DEROG").isNull(), lit(0)) \
+            .when(col("DEROG") >= 3, lit(2)) \
+            .when(col("DEROG") >= 1, lit(1)) \
+            .otherwise(lit(0))
+        return dfFinal.withColumn(
+            "LTV_RISK_CAT",
+            when(col("LTV").isNull(), lit(None))
+            .when(col("LTV") < 0.60, lit("Low"))
+            .when(col("LTV") < 0.80, lit("Medium"))
+            .otherwise(lit("High"))
+        ).withColumn(
+            "DTI_RISK_CAT",
+            when(col("DEBTINC").isNull(), lit(None))
+            .when(col("DEBTINC") < 30, lit("Low"))
+            .when(col("DEBTINC") < 40, lit("Medium"))
+            .when(col("DEBTINC") < 50, lit("High"))
+            .otherwise(lit("Very High"))
+        ).withColumn(
+            "DELINQ_RISK_CAT",
+            when(col("DELINQ").isNull(), lit(None))
+            .when(col("DELINQ") == 0, lit("None"))
+            .when(col("DELINQ") == 1, lit("Low"))
+            .when(col("DELINQ") <= 3, lit("Medium"))
+            .otherwise(lit("High"))
+        ).withColumn(
+            "RISK_SCORE",
+            (ltvScore + dtiScore + delinqScore + derogScore).cast("double")
+        ).withColumn(
+            "RISK_SEGMENT",
+            when(col("RISK_SCORE") < 3, lit("Low Risk"))
+            .when(col("RISK_SCORE") < 5, lit("Medium Risk"))
+            .when(col("RISK_SCORE") < 7, lit("High Risk"))
+            .otherwise(lit("Very High Risk"))
+        )
+
+    def test_risk_segmentation_script_runs(self):
+        """Run pyspark/04_risk_segmentation.py and check its printed outputs."""
+        result = subprocess.run(
+            [sys.executable, "pyspark/04_risk_segmentation.py"],
+            cwd=self.projectRoot, capture_output=True, text=True, timeout=600
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        out = result.stdout
+
+        self.assertIn("Rows in work.home_equity_final: 5337", out)
+        self.assertIn("Rows in work.home_equity_risk: 5337", out)
+
+        # PROC FREQ one-way tables: Frequency and Percent per level
+        expectedFreq = [
+            ("High Risk", 427, "8.0"), ("Low Risk", 3118, "58.42"),
+            ("Medium Risk", 1776, "33.28"), ("Very High Risk", 16, "0.3"),
+        ]
+        for level, freq, pct in expectedFreq:
+            self.assertRegex(
+                out, rf"\|{re.escape(level)}\s*\|{freq}\s*\|{re.escape(pct)}\s*\|"
+            )
+        self.assertIn("Frequency Missing = 1084", out)  # DTI_RISK_CAT
+        self.assertIn("Frequency Missing = 390", out)   # DELINQ_RISK_CAT
+
+        # PROC MEANS: default rate (mean of BAD) per segment
+        self.assertRegex(out, r"\|Low Risk\s*\|3118\s*\|BAD\s*\|3118\s*\|0\.1523\s*\|")
+        self.assertRegex(out, r"\|Very High Risk\s*\|16\s*\|DEBTINC\s*\|15\s*\|65\.7773\s*\|")
+
+        # PROC FREQ three-way table: one DTI x BAD table per LTV level
+        for ltvLevel in ["High", "Low", "Medium"]:
+            self.assertIn(f"Controlling for LTV_RISK_CAT={ltvLevel}", out)
+        self.assertRegex(out, r"\|Total\s*\|933\s*\|103\s*\|1036\s*\|")
+        self.assertRegex(out, r"\|Total\s*\|810\s*\|73\s*\|883\s*\|")
+        self.assertRegex(out, r"\|Total\s*\|2160\s*\|174\s*\|2334\s*\|")
+
+    def test_risk_input_filter_matches_sas_missing_semantics(self):
+        """SAS 'if LTV > 0 and LTV < 5' drops missing LTV; so must Spark."""
+        dfRisk = self._buildRiskDataset(self.df)
+        self.assertEqual(dfRisk.count(), 5337)
+        self.assertEqual(dfRisk.filter(col("LTV").isNull()).count(), 0)
+
+        # Independent row count from the raw CSV with plain Python
+        import csv
+        dataPath = os.path.join(self.projectRoot, "data", "home_equity.csv")
+        kept = 0
+        with open(dataPath, newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                if row["LOAN"] == "" or row["VALUE"] == "" or row["BAD"] == "":
+                    continue
+                loan, value = float(row["LOAN"]), float(row["VALUE"])
+                if row["MORTDUE"] == "" or value <= 0:
+                    continue  # LTV missing -> dropped by LTV > 0
+                ltv = float(row["MORTDUE"]) / value
+                if 0 < ltv < 5 and loan > 0 and value > 0:
+                    kept += 1
+        self.assertEqual(dfRisk.count(), kept)
+
+    def test_risk_category_boundaries(self):
+        """Check range boundaries and missing inputs on synthetic rows."""
+        rows = [
+            # MORTDUE (VALUE=100000, so LTV = MORTDUE / 100000), DEBTINC, DELINQ, DEROG
+            (59990, 29.99, 0, 0),
+            (60000, 30.0, 1, 1),
+            (70000, None, 4, None),
+            (70000, 45.0, None, 0),
+            (80000, 40.0, 2, 2),
+            (120000, 50.0, 3, 3),
+        ]
+        dfInput = self.spark.createDataFrame(
+            rows, "MORTDUE int, DEBTINC double, DELINQ int, DEROG int"
+        ).withColumn("VALUE", lit(100000)) \
+         .withColumn("LOAN", lit(10000)) \
+         .withColumn("BAD", lit(0))
+        result = self._buildRiskDataset(dfInput).orderBy("MORTDUE", "DEBTINC").collect()
+        actual = [
+            (r["LTV_RISK_CAT"], r["DTI_RISK_CAT"], r["DELINQ_RISK_CAT"],
+             r["RISK_SCORE"], r["RISK_SEGMENT"])
+            for r in result
+        ]
+        expected = [
+            ("Low", "Low", "None", 0.0, "Low Risk"),
+            ("Medium", "Medium", "Low", 4.0, "Medium Risk"),
+            ("Medium", None, "High", 3.5, "Medium Risk"),
+            ("Medium", "High", None, 3.5, "Medium Risk"),
+            ("High", "High", "Medium", 7.5, "Very High Risk"),
+            ("High", "Very High", "Medium", 9.5, "Very High Risk"),
+        ]
+        self.assertEqual(actual, expected)
+
+    def test_risk_freq_excludes_missing_from_percent(self):
+        """PROC FREQ percents use only non-missing levels as the denominator."""
+        dfRisk = self._buildRiskDataset(self.df)
+        nonMissing = dfRisk.filter(col("DTI_RISK_CAT").isNotNull())
+        total = nonMissing.count()
+        self.assertEqual(dfRisk.count() - total, 1084)
+        freq = {
+            r["DTI_RISK_CAT"]: r["count"]
+            for r in nonMissing.groupBy("DTI_RISK_CAT").count().collect()
+        }
+        self.assertEqual(freq, {"Low": 1122, "Medium": 2293, "High": 796, "Very High": 42})
+        self.assertAlmostEqual(sum(v * 100.0 / total for v in freq.values()), 100.0)
+        self.assertAlmostEqual(round(freq["Low"] * 100.0 / total, 2), 26.38)
+
+    def test_risk_three_way_crosstab(self):
+        """LTV x DTI x BAD table: per-stratum totals and zero-filled cells."""
+        dfRisk = self._buildRiskDataset(self.df).filter(
+            col("DTI_RISK_CAT").isNotNull()
+        )
+        cells = dfRisk.groupBy("LTV_RISK_CAT", "DTI_RISK_CAT") \
+            .pivot("BAD", [0, 1]).count().na.fill(0).collect()
+        byKey = {(r["LTV_RISK_CAT"], r["DTI_RISK_CAT"]): (r["0"], r["1"]) for r in cells}
+        self.assertEqual(len(byKey), 12)
+        self.assertEqual(byKey[("High", "Very High")], (0, 13))
+        self.assertEqual(byKey[("Medium", "Medium")], (1259, 69))
+        self.assertEqual(sum(a + b for a, b in byKey.values()), 5337 - 1084)
 
     # ------------------------------------------------------------------
     # Test 05: Logistic Regression
