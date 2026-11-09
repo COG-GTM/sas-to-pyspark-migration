@@ -52,6 +52,28 @@ df = spark.read.csv(
 # We document them as metadata in a dictionary. The SAS percent8.2
 # format is display-only; LTV is stored as a raw ratio (e.g. 0.75).
 # ------------------------------------------------------------------
+# SAS propcase() starts a new word after blank, "/", "-", "(" and ".";
+# Spark initcap() only splits on whitespace, so re-capitalize the first
+# letter after each of the other delimiters (e.g. "Winston-Salem").
+PROPCASE_DELIMITERS = ["/", "-", "(", "."]
+
+
+def propcase(col):
+    result = F.initcap(col)
+    for delim in PROPCASE_DELIMITERS:
+        result = F.array_join(
+            F.transform(
+                F.split(result, "\\" + delim),
+                lambda s: F.concat(
+                    F.upper(s.substr(F.lit(1), F.lit(1))),
+                    s.substr(F.lit(2), F.length(s))
+                )
+            ),
+            delim
+        )
+    return result
+
+
 home_equity_clean = df \
     .withColumn(
         "LTV",
@@ -68,7 +90,7 @@ home_equity_clean = df \
          .when(F.col("BAD") == 1, "Default")
          .otherwise("")
     ) \
-    .withColumn("CITY", F.initcap(F.col("CITY")))
+    .withColumn("CITY", propcase(F.col("CITY")))
 
 columnLabels = {
     "LTV": "Loan to Value Ratio",
