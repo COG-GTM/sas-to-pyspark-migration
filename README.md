@@ -23,14 +23,15 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 |---|---|---|---|---|
 | 1 | `sas/01_data_loading.sas` | `pyspark/01_data_loading.py` | Load CSV, apply labels/formats, inspect metadata, preview data | ✅ Migrated |
 | 2 | `sas/02_data_cleaning.sas` | Not yet created | DATA step cleaning, arrays, missing-value handling, PROC MEANS | ⏳ Pending |
-| 3 | `sas/03_aggregation_reporting.sas` | Not yet created | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ⏳ Pending |
+| 3 | `sas/03_aggregation_reporting.sas` | `pyspark/03_aggregation_reporting.py` | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ✅ Migrated |
 | 4 | `sas/04_risk_segmentation.sas` | Not yet created | PROC FORMAT, composite risk scoring, segment frequencies | ⏳ Pending |
 | 5 | `sas/05_logistic_regression.sas` | Not yet created | PROC LOGISTIC, stepwise selection, ROC/AUC | ⏳ Pending |
 
 ### Migration status / roadmap
 
 - **Done:** `01_data_loading`. This is the reference example: `pyspark/01_data_loading.py` mirrors `sas/01_data_loading.sas` section by section, and each section has a `# SAS equivalent:` comment.
-- **Planned:** components 2–5. The SAS source is in `sas/` and the matching PySpark scripts will go in `pyspark/` as `02_data_cleaning.py`, `03_aggregation_reporting.py`, `04_risk_segmentation.py` and `05_logistic_regression.py`.
+- **Done:** `03_aggregation_reporting`. `pyspark/03_aggregation_reporting.py` rebuilds `work.home_equity_final` from the CSV and reproduces the PROC FREQ, PROC MEANS, PROC TABULATE and PROC SQL reports.
+- **Planned:** components 2, 4 and 5. The SAS source is in `sas/` and the matching PySpark scripts will go in `pyspark/` as `02_data_cleaning.py`, `04_risk_segmentation.py` and `05_logistic_regression.py`.
 
 ---
 
@@ -86,7 +87,9 @@ python pyspark/01_data_loading.py
 - **Data loading:** the file loads, has 5,960 rows and 18 columns, and the expected columns are present.
 - **Transformation logic for the planned components:** LTV and `LOAN_OUTCOME` derivation, null filtering, `groupBy` frequency counts and summary statistics, a Spark SQL top-states query, risk categories and the 0–10 risk score and segments, and a logistic regression pipeline (AUC > 0.5).
 
-The tests rebuild that logic inline from the CSV. They don't import or run any script in `pyspark/`, so they don't check `pyspark/01_data_loading.py`'s output directly.
+- **03 aggregation/reporting:** `pyspark/03_aggregation_reporting.py` runs with exit code 0 and prints the expected row counts and report values, plus inline checks of SAS semantics (missing `LTV` dropped from `work.home_equity_final`, PROC FREQ percents excluding missing, PROC MEANS/TABULATE dropping missing CLASS levels, exact median).
+
+Apart from the 03 script test, the tests rebuild the logic inline from the CSV and don't import or run scripts in `pyspark/`.
 
 ```bash
 python -m pytest tests/test_pyspark_outputs.py -v
@@ -143,7 +146,8 @@ sas-to-pyspark-migration/
 │   ├── 04_risk_segmentation.sas               # PROC FORMAT, risk scoring, PROC FREQ
 │   └── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
 ├── pyspark/
-│   └── 01_data_loading.py                     # spark.read.csv, printSchema, show (02–05 pending)
+│   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
+│   └── 03_aggregation_reporting.py            # groupBy/agg, pivot, Spark SQL reports
 ├── migration_guide/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples

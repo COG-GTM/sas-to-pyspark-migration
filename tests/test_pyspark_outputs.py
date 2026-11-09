@@ -6,8 +6,11 @@ Ensures correctness of the migrated SAS-to-PySpark logic.
 
 import unittest
 import os
+import subprocess
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, when, lit, mean, count
+from pyspark.sql import functions as F
 
 
 class TestHomeEquityPySpark(unittest.TestCase):
@@ -28,6 +31,7 @@ class TestHomeEquityPySpark(unittest.TestCase):
         projectRoot = os.path.dirname(testDir)
         dataPath = os.path.join(projectRoot, "data", "home_equity.csv")
 
+        cls.projectRoot = projectRoot
         cls.df = cls.spark.read.csv(dataPath, header=True, inferSchema=True)
 
     @classmethod
@@ -188,6 +192,97 @@ class TestHomeEquityPySpark(unittest.TestCase):
         # Verify ordering (descending by avg_loan)
         for i in range(len(result) - 1):
             self.assertGreaterEqual(result[i]["avg_loan"], result[i + 1]["avg_loan"])
+
+    def _homeEquityFinal(self):
+        """Rebuild work.home_equity_final (sas/02 steps 1, 3 and 5)."""
+        return self.df.withColumn(
+            "LTV",
+            when(
+                col("VALUE").isNotNull() & col("MORTDUE").isNotNull() & (col("VALUE") > 0),
+                col("MORTDUE") / col("VALUE")
+            )
+        ).withColumn(
+            "LOAN_OUTCOME",
+            when(col("BAD") == 0, lit("Paid"))
+            .when(col("BAD") == 1, lit("Default"))
+        ).filter(
+            col("LOAN").isNotNull() & col("VALUE").isNotNull() & col("BAD").isNotNull()
+        ).filter(
+            (col("LTV") > 0) & (col("LTV") < 5) & (col("LOAN") > 0) & (col("VALUE") > 0)
+        )
+
+    def test_aggregation_reporting_script_runs(self):
+        """Run pyspark/03_aggregation_reporting.py and check its key outputs."""
+        result = subprocess.run(
+            [sys.executable, "pyspark/03_aggregation_reporting.py"],
+            cwd=self.projectRoot,
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        out = result.stdout
+        self.assertIn("Rows in work.home_equity_filtered: 5848", out)
+        self.assertIn("Rows in work.home_equity_final:    5337", out)
+        for title in [
+            "Frequency Tables: Job Category, Loan Reason, Loan Outcome, Region",
+            "Summary Statistics by Loan Outcome",
+            "Default Rates by Job Category and Region",
+            "Top 10 States by Average Loan Amount",
+            "Loan Amount Distribution by Reason and Outcome",
+        ]:
+            self.assertIn(title, out)
+        # PROC FREQ: missing JOB and REASON reported separately
+        self.assertIn("Frequency Missing = 176", out)
+        self.assertIn("Frequency Missing = 159", out)
+        # PROC FREQ LOAN_OUTCOME levels
+        self.assertRegex(out, r"\|Default\s*\|997\s*\|18\.68")
+        self.assertRegex(out, r"\|Paid\s*\|4340\s*\|81\.32")
+        # PROC TABULATE grand total (rows with missing JOB excluded)
+        self.assertRegex(out, r"\|Total\s*\|1073.*\|5161\s*\|19\.16%")
+        # PROC SQL top state with dollar12. / percent8.2 formats
+        self.assertRegex(out, r"\|Vermont\s*\|11\s*\|\$25,673\s*\|\$116,467\s*\|9\.09%")
+
+    def test_home_equity_final_row_count(self):
+        """SAS drops missing LTV via 'if LTV > 0 and LTV < 5'; Spark must too."""
+        dfFinal = self._homeEquityFinal()
+        self.assertEqual(dfFinal.count(), 5337)
+        self.assertEqual(dfFinal.filter(col("LTV").isNull()).count(), 0)
+
+    def test_proc_freq_percent_excludes_missing(self):
+        """PROC FREQ percents use non-missing rows as the denominator."""
+        dfFinal = self._homeEquityFinal()
+        nonMissing = dfFinal.filter(col("JOB").isNotNull())
+        total = nonMissing.count()
+        self.assertEqual(dfFinal.count() - total, 176)
+        pcts = nonMissing.groupBy("JOB").count() \
+            .withColumn("PCT", col("count") * 100.0 / total).collect()
+        self.assertAlmostEqual(sum(r["PCT"] for r in pcts), 100.0, places=6)
+
+    def test_proc_means_class_drops_missing_levels(self):
+        """PROC MEANS CLASS (no MISSING option) drops rows with missing REASON."""
+        dfFinal = self._homeEquityFinal()
+        nObs = dfFinal.filter(col("REASON").isNotNull()) \
+            .groupBy("REASON", "LOAN_OUTCOME").count().collect()
+        self.assertEqual(len(nObs), 4)
+        self.assertEqual(sum(r["count"] for r in nObs), 5337 - 159)
+
+    def test_median_is_exact(self):
+        """F.median matches the SAS PROC MEANS median (average of middle pair)."""
+        small = self.spark.createDataFrame([(1.0,), (2.0,), (3.0,), (10.0,)], ["X"])
+        self.assertEqual(small.agg(F.median("X")).collect()[0][0], 2.5)
+        dfFinal = self._homeEquityFinal()
+        paidMedian = dfFinal.filter(col("BAD") == 0) \
+            .agg(F.median("LOAN")).collect()[0][0]
+        self.assertEqual(paidMedian, 16900.0)
+
+    def test_tabulate_total_excludes_missing_class(self):
+        """PROC TABULATE drops rows with any missing CLASS var from all totals."""
+        dfFinal = self._homeEquityFinal()
+        tab = dfFinal.filter(col("JOB").isNotNull() & col("REGION").isNotNull())
+        row = tab.agg(count("BAD").alias("N"), mean("BAD").alias("RATE")).collect()[0]
+        self.assertEqual(row["N"], 5161)
+        self.assertAlmostEqual(row["RATE"], 0.1916, places=4)
 
     # ------------------------------------------------------------------
     # Test 04: Risk Segmentation
