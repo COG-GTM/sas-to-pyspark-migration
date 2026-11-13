@@ -470,7 +470,7 @@ def main():
                         handleInvalid="keep"),
         LogisticRegression(featuresCol="features", labelCol="label",
                            regParam=0.0, maxIter=100, tol=1e-10),
-    ]).fit(complete_cases(trainDesign, selectedCols)))
+    ]).fit(trainUsed))
 
     trainScored = with_pred_prob(logitModel.transform(train))
     hlChi2, hlDf, hlP = hosmer_lemeshow(complete_cases(trainScored, allCols))

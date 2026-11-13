@@ -150,7 +150,7 @@ def test_mllib_fit_matches_glm_mle_and_scores_holdout(fitted):
     from pyspark.ml.feature import VectorAssembler
 
     cols = logreg.effect_columns(fitted["selected"], fitted["design_cols"])
-    fit_rows = logreg.complete_cases(fitted["train_design"], cols)
+    fit_rows = fitted["train_used"]
     lr = Pipeline(stages=[
         VectorAssembler(inputCols=cols, outputCol="features", handleInvalid="keep"),
         LogisticRegression(featuresCol="features", labelCol="label",
