@@ -1,6 +1,6 @@
 # SAS to PySpark Migration Demo
 
-This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, it includes one complete migration example (data loading), with the SAS program and its PySpark equivalent side by side and inline comments mapping each SAS construct to PySpark. Four more SAS programs (cleaning, aggregation/reporting, risk segmentation and logistic regression) are included as migration targets for planned examples; they don't have PySpark equivalents yet. A pytest suite runs Spark checks against the dataset.
+This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, it includes five complete migration examples, from data loading through cleaning, aggregation/reporting and risk segmentation to logistic regression. Each SAS program sits next to its PySpark equivalent, with inline comments mapping each SAS construct to PySpark. A pytest suite runs Spark checks against the dataset, and each migrated program 02–05 has its own parity tests.
 
 Built for teams evaluating a move from SAS to open-source distributed computing on platforms like Databricks, Amazon EMR, or Azure Synapse.
 
@@ -22,15 +22,15 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 | # | SAS Program | PySpark Script | Description | Status |
 |---|---|---|---|---|
 | 1 | `sas/01_data_loading.sas` | `pyspark/01_data_loading.py` | Load CSV, apply labels/formats, inspect metadata, preview data | ✅ Migrated |
-| 2 | `sas/02_data_cleaning.sas` | Not yet created | DATA step cleaning, arrays, missing-value handling, PROC MEANS | ⏳ Pending |
-| 3 | `sas/03_aggregation_reporting.sas` | Not yet created | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ⏳ Pending |
-| 4 | `sas/04_risk_segmentation.sas` | Not yet created | PROC FORMAT, composite risk scoring, segment frequencies | ⏳ Pending |
-| 5 | `sas/05_logistic_regression.sas` | Not yet created | PROC LOGISTIC, stepwise selection, ROC/AUC | ⏳ Pending |
+| 2 | `sas/02_data_cleaning.sas` | `pyspark/02_data_cleaning.py` | DATA step cleaning, arrays, missing-value handling, PROC MEANS | ✅ Migrated |
+| 3 | `sas/03_aggregation_reporting.sas` | `pyspark/03_aggregation_reporting.py` | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ✅ Migrated |
+| 4 | `sas/04_risk_segmentation.sas` | `pyspark/04_risk_segmentation.py` | PROC FORMAT, composite risk scoring, segment frequencies | ✅ Migrated |
+| 5 | `sas/05_logistic_regression.sas` | `pyspark/05_logistic_regression.py` | PROC LOGISTIC, stepwise selection, ROC/AUC | ✅ Migrated |
 
 ### Migration status / roadmap
 
-- **Done:** `01_data_loading`. This is the reference example: `pyspark/01_data_loading.py` mirrors `sas/01_data_loading.sas` section by section, and each section has a `# SAS equivalent:` comment.
-- **Planned:** components 2–5. The SAS source is in `sas/` and the matching PySpark scripts will go in `pyspark/` as `02_data_cleaning.py`, `03_aggregation_reporting.py`, `04_risk_segmentation.py` and `05_logistic_regression.py`.
+- **Done:** all five programs. `pyspark/01_data_loading.py` is the reference example. Each script mirrors its SAS program section by section, and each section has a `# SAS equivalent:` comment. Every script loads `data/home_equity.csv` itself and rebuilds any upstream steps it needs, so each one runs on its own.
+- **Known parity differences:** see each script's PR description. The main one is in 05: stepwise selection uses likelihood-ratio tests, and the train/validation split can't reproduce SAS's random number stream.
 
 ---
 
@@ -70,13 +70,17 @@ The [`migration_guide/`](migration_guide/) folder contains detailed reference do
 pip install pyspark
 ```
 
-### Running the PySpark Script
+### Running the PySpark Scripts
 
-The migrated script is self-contained:
+Each script is self-contained:
 
 ```bash
 # From the repository root directory
 python pyspark/01_data_loading.py
+python pyspark/02_data_cleaning.py
+python pyspark/03_aggregation_reporting.py
+python pyspark/04_risk_segmentation.py
+python pyspark/05_logistic_regression.py
 ```
 
 ### Running the Tests
@@ -84,12 +88,12 @@ python pyspark/01_data_loading.py
 `tests/test_pyspark_outputs.py` creates a local SparkSession, loads `data/home_equity.csv` and checks:
 
 - **Data loading:** the file loads, has 5,960 rows and 18 columns, and the expected columns are present.
-- **Transformation logic for the planned components:** LTV and `LOAN_OUTCOME` derivation, null filtering, `groupBy` frequency counts and summary statistics, a Spark SQL top-states query, risk categories and the 0–10 risk score and segments, and a logistic regression pipeline (AUC > 0.5).
+- **Transformation logic for components 2–5:** LTV and `LOAN_OUTCOME` derivation, null filtering, `groupBy` frequency counts and summary statistics, a Spark SQL top-states query, risk categories and the 0–10 risk score and segments, and a logistic regression pipeline (AUC > 0.5).
 
-The tests rebuild that logic inline from the CSV. They don't import or run any script in `pyspark/`, so they don't check `pyspark/01_data_loading.py`'s output directly.
+Those tests rebuild that logic inline from the CSV. The per-program parity tests (`tests/test_02_data_cleaning.py` through `tests/test_05_logistic_regression.py`) check each migrated script's output against an independent pure-Python implementation of the SAS rules.
 
 ```bash
-python -m pytest tests/test_pyspark_outputs.py -v
+python -m pytest tests/ -v
 ```
 
 Or with unittest directly:
@@ -143,12 +147,20 @@ sas-to-pyspark-migration/
 │   ├── 04_risk_segmentation.sas               # PROC FORMAT, risk scoring, PROC FREQ
 │   └── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
 ├── pyspark/
-│   └── 01_data_loading.py                     # spark.read.csv, printSchema, show (02–05 pending)
+│   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
+│   ├── 02_data_cleaning.py                    # withColumn, when/otherwise, array-style flags, exact percentiles
+│   ├── 03_aggregation_reporting.py            # groupBy, agg, crosstab, spark.sql
+│   ├── 04_risk_segmentation.py                # when/otherwise chains, risk scoring
+│   └── 05_logistic_regression.py              # stepwise GLM, ML Pipeline, AUC/association stats
 ├── migration_guide/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples
 └── tests/
-    └── test_pyspark_outputs.py                # Spark validation tests on the dataset
+    ├── test_pyspark_outputs.py                # Spark validation tests on the dataset
+    ├── test_02_data_cleaning.py               # Parity tests for 02
+    ├── test_03_aggregation_reporting.py       # Parity tests for 03
+    ├── test_04_risk_segmentation.py           # Parity tests for 04
+    └── test_05_logistic_regression.py         # Parity tests for 05
 ```
 
 ---
