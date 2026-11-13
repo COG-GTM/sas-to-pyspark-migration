@@ -113,6 +113,14 @@ class TestDataCleaning02(unittest.TestCase):
                 self.assertAlmostEqual(s[name], _sas_pctl(vals, p), places=9,
                                        msg=f"{v} {name}")
 
+    def test_proc_means_on_empty_dataset(self):
+        empty = self.out["home_equity_filtered"].limit(0)
+        stats = self.mod.proc_means(empty, self.mod.OUTLIER_VARS, with_percentiles=True).collect()
+        self.assertEqual(len(stats), len(self.mod.OUTLIER_VARS))
+        for s in stats:
+            self.assertEqual((s["N"], s["NMiss"]), (0, 0))
+            self.assertIsNone(s["Mean"])
+
     def test_final_dataset_constraints(self):
         final = self.out["home_equity_final"]
         bad = final.filter(

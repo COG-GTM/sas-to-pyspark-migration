@@ -102,7 +102,7 @@ def proc_means(df: DataFrame, variables, with_percentiles: bool) -> DataFrame:
     for v in variables:
         exprs += [
             F.count(v).alias(f"{v}__N"),
-            F.sum(F.col(v).isNull().cast("int")).alias(f"{v}__NMiss"),
+            F.count(F.when(F.col(v).isNull(), 1)).alias(f"{v}__NMiss"),
             F.mean(v).alias(f"{v}__Mean"),
             F.stddev_samp(v).alias(f"{v}__StdDev"),
             F.min(v).cast("double").alias(f"{v}__Min"),
