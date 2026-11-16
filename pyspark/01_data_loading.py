@@ -4,10 +4,16 @@ Purpose: Load and explore the HOME_EQUITY dataset
 Equivalent SAS Program: sas/01_data_loading.sas
 """
 
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType, StructField, IntegerType, DoubleType, StringType
 )
+
+# Resolve the data file from the project root so the script runs from any CWD.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "home_equity.csv")
 
 # Initialize SparkSession
 # SAS equivalent: Starting a SAS session
@@ -25,7 +31,7 @@ spark = SparkSession.builder \
 #   run;
 # ------------------------------------------------------------------
 df = spark.read.csv(
-    "data/home_equity.csv",
+    DATA_PATH,
     header=True,
     inferSchema=True
 )

@@ -22,15 +22,15 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 | # | SAS Program | PySpark Script | Description | Status |
 |---|---|---|---|---|
 | 1 | `sas/01_data_loading.sas` | `pyspark/01_data_loading.py` | Load CSV, apply labels/formats, inspect metadata, preview data | ✅ Migrated |
-| 2 | `sas/02_data_cleaning.sas` | Not yet created | DATA step cleaning, arrays, missing-value handling, PROC MEANS | ⏳ Pending |
-| 3 | `sas/03_aggregation_reporting.sas` | Not yet created | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ⏳ Pending |
-| 4 | `sas/04_risk_segmentation.sas` | Not yet created | PROC FORMAT, composite risk scoring, segment frequencies | ⏳ Pending |
-| 5 | `sas/05_logistic_regression.sas` | Not yet created | PROC LOGISTIC, stepwise selection, ROC/AUC | ⏳ Pending |
+| 2 | `sas/02_data_cleaning.sas` | `pyspark/02_data_cleaning.py` | DATA step cleaning, arrays, missing-value handling, PROC MEANS | ✅ Migrated |
+| 3 | `sas/03_aggregation_reporting.sas` | `pyspark/03_aggregation_reporting.py` | PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL reporting | ✅ Migrated |
+| 4 | `sas/04_risk_segmentation.sas` | `pyspark/04_risk_segmentation.py` | PROC FORMAT, composite risk scoring, segment frequencies | ✅ Migrated |
+| 5 | `sas/05_logistic_regression.sas` | `pyspark/05_logistic_regression.py` | PROC LOGISTIC, stepwise selection, ROC/AUC | ✅ Migrated |
 
 ### Migration status / roadmap
 
-- **Done:** `01_data_loading`. This is the reference example: `pyspark/01_data_loading.py` mirrors `sas/01_data_loading.sas` section by section, and each section has a `# SAS equivalent:` comment.
-- **Planned:** components 2–5. The SAS source is in `sas/` and the matching PySpark scripts will go in `pyspark/` as `02_data_cleaning.py`, `03_aggregation_reporting.py`, `04_risk_segmentation.py` and `05_logistic_regression.py`.
+- **Done:** all five components. Each `pyspark/0X_*.py` mirrors the matching `sas/0X_*.sas` section by section with a `# SAS equivalent:` comment per step.
+- Every script is self-contained: it starts its own `SparkSession`, rebuilds any upstream cleaning/feature engineering inline, resolves `data/home_equity.csv` relative to the project root, and calls `spark.stop()`.
 
 ---
 
@@ -67,16 +67,19 @@ The [`migration_guide/`](migration_guide/) folder contains detailed reference do
 ### Installation
 
 ```bash
-pip install pyspark
+pip install pyspark numpy   # numpy is required by pyspark.ml (05_logistic_regression)
 ```
 
 ### Running the PySpark Script
 
-The migrated script is self-contained:
+Each migrated script is self-contained and can be run from any working directory:
 
 ```bash
-# From the repository root directory
 python pyspark/01_data_loading.py
+python pyspark/02_data_cleaning.py
+python pyspark/03_aggregation_reporting.py
+python pyspark/04_risk_segmentation.py
+python pyspark/05_logistic_regression.py
 ```
 
 ### Running the Tests
@@ -143,7 +146,11 @@ sas-to-pyspark-migration/
 │   ├── 04_risk_segmentation.sas               # PROC FORMAT, risk scoring, PROC FREQ
 │   └── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
 ├── pyspark/
-│   └── 01_data_loading.py                     # spark.read.csv, printSchema, show (02–05 pending)
+│   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
+│   ├── 02_data_cleaning.py                    # when/otherwise, column loops, null flags, groupBy().agg()
+│   ├── 03_aggregation_reporting.py            # groupBy().count(), pivot, spark.sql()
+│   ├── 04_risk_segmentation.py                # range formats as when() chains, risk score
+│   └── 05_logistic_regression.py              # Spark ML pipeline, stepwise selection, AUC
 ├── migration_guide/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples
