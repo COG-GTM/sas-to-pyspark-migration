@@ -162,7 +162,7 @@ print("\n" + "=" * 60)
 print("Step 2: Training / Validation Split (seed=42, 70/30)")
 print("=" * 60)
 print(f"Training rows:   {train.count()}  (used in model: {trainComplete.count()})")
-print(f"Validation rows: {valid.count()}  (scorable: {validComplete.count()})")
+print(f"Validation rows: {valid.count()}  (complete cases: {validComplete.count()})")
 
 # ------------------------------------------------------------------
 # CLASS statement with reference-cell coding
@@ -171,7 +171,7 @@ print(f"Validation rows: {valid.count()}  (scorable: {validComplete.count()})")
 # (dropLast=True) drops exactly the reference level -> param=ref dummies.
 # ------------------------------------------------------------------
 classLevels = {}
-encoderStages = []
+encoderStagesByEffect = {}
 for effect, refLevel in classEffects.items():
     levels = sorted(
         row[effect] for row in
@@ -179,10 +179,13 @@ for effect, refLevel in classEffects.items():
     )
     labels = [lvl for lvl in levels if lvl != refLevel] + [refLevel]
     classLevels[effect] = labels[:-1]
-    encoderStages.append(StringIndexerModel.from_labels(
-        labels, inputCol=effect, outputCol=f"{effect}_IDX"))
-    encoderStages.append(OneHotEncoder(
-        inputCol=f"{effect}_IDX", outputCol=f"{effect}_VEC", dropLast=True))
+    encoderStagesByEffect[effect] = [
+        StringIndexerModel.from_labels(
+            labels, inputCol=effect, outputCol=f"{effect}_IDX"),
+        OneHotEncoder(
+            inputCol=f"{effect}_IDX", outputCol=f"{effect}_VEC", dropLast=True),
+    ]
+encoderStages = [stage for stages in encoderStagesByEffect.values() for stage in stages]
 
 effectColumn = {e: e for e in numericEffects}
 effectColumn.update({e: f"{e}_VEC" for e in classEffects})
@@ -301,7 +304,11 @@ print(f"  -2 Log L: {finalSummary.deviance:.4f}   AIC: {finalSummary.aic:.4f}")
 
 # SAS: MODEL + STORE -> Pipeline(StringIndexer, OneHotEncoder,
 #      VectorAssembler, LogisticRegression) fitted once and reused for scoring
-logitPipeline = Pipeline(stages=encoderStages + [
+# Only the selected CLASS effects are encoded, so scoring does not need the
+# dropped ones to be non-missing (PROC PLM uses only the stored model's effects).
+selectedEncoderStages = [stage for e in selected if e in classEffects
+                         for stage in encoderStagesByEffect[e]]
+logitPipeline = Pipeline(stages=selectedEncoderStages + [
     VectorAssembler(inputCols=[effectColumn[e] for e in selected],
                     outputCol="features"),
     LogisticRegression(featuresCol="features", labelCol="label",
@@ -342,11 +349,17 @@ print(f"  ChiSq={hlStat:.4f}  DF={hlDf}  Pr>ChiSq={chiSquareSf(hlStat, hlDf):.4f
 #   proc plm restore=work.logit_model;
 #       score data=work.valid out=work.valid_scored predicted=pred_prob / ilink;
 #   run;
-# Rows with a missing model variable get a missing pred_prob, as in PLM.
+# Rows missing a variable of the selected model get a missing pred_prob,
+# as in PLM; rows missing only dropped effects are still scored.
 # ------------------------------------------------------------------
-validScored = scoreWithProbability(logitModel, validComplete) \
+scorable = None
+for effect in selected:
+    cond = col(effect).isNotNull()
+    scorable = cond if scorable is None else scorable & cond
+
+validScored = scoreWithProbability(logitModel, valid.filter(scorable)) \
     .select(*valid.columns, "pred_prob") \
-    .unionByName(valid.filter(~completeCase).withColumn("pred_prob", lit(None).cast("double")))
+    .unionByName(valid.filter(~scorable).withColumn("pred_prob", lit(None).cast("double")))
 
 # ------------------------------------------------------------------
 # Step 5: Create predicted classes and confusion matrix
