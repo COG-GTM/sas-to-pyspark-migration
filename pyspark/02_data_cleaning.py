@@ -11,7 +11,7 @@ import os
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.functions import col, initcap, lit, when
+from pyspark.sql.functions import col, initcap, lit, regexp_replace, when
 
 # Initialize SparkSession
 # SAS equivalent: Starting a SAS session
@@ -70,12 +70,24 @@ def printHeader(title):
 # Notes:
 #   - SAS missing (.) maps to Spark null; `when` without a match
 #     returns null, matching LTV = . in the ELSE branch.
-#   - propcase() maps to initcap().
+#   - propcase() maps to initcap(). initcap() only starts a new word after
+#     whitespace, while propcase() also does after - / ( . (e.g.
+#     winston-salem -> Winston-Salem). propCase() adds a temporary space
+#     after those characters, runs initcap(), then removes the spaces.
 #   - PySpark has no native column labels or display formats. The labels
 #     are documented below; LTV is kept as a raw ratio (e.g. 0.6627).
 #     percent8.2 only changes how SAS displays the value (66.27%), not
 #     the stored number, so no conversion is applied.
 # ------------------------------------------------------------------
+PROPCASE_MARK = "\u0001 "
+
+
+def propCase(column):
+    """SAS propcase(): capitalize after blanks and after - / ( . characters."""
+    marked = regexp_replace(column, r"([-/(.])", "$1" + PROPCASE_MARK)
+    return regexp_replace(initcap(marked), PROPCASE_MARK, "")
+
+
 columnLabels = {
     "LTV": "Loan to Value Ratio",          # SAS format: percent8.2 (display only)
     "LOAN_OUTCOME": "Loan Outcome",
@@ -97,7 +109,7 @@ dfClean = df \
         .when(col("BAD") == 1, lit("Default"))
         .otherwise(lit(""))
     ) \
-    .withColumn("CITY", initcap(col("CITY")))
+    .withColumn("CITY", propCase(col("CITY")))
 
 printHeader("Step 1: Derived columns (work.home_equity_clean)")
 for colName, label in columnLabels.items():
