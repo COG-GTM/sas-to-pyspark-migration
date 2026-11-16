@@ -289,10 +289,15 @@ def main():
     ltvLevels = sorted(r[0] for r in crossTab.select("LTV_RISK_CAT").distinct().collect())
     for tableNo, ltvLevel in enumerate(ltvLevels, start=1):
         print(f"\nTable {tableNo} of DTI_RISK_CAT by BAD, controlling for LTV_RISK_CAT={ltvLevel}")
-        crossTab.filter(F.col("LTV_RISK_CAT") == ltvLevel) \
+        stratum = crossTab.filter(F.col("LTV_RISK_CAT") == ltvLevel) \
             .drop("LTV_RISK_CAT") \
-            .orderBy("DTI_RISK_CAT") \
-            .show(truncate=False)
+            .orderBy("DTI_RISK_CAT")
+        # SAS: PROC FREQ prints a Total row under each stratum's table
+        totalRow = stratum.agg(
+            F.lit("Total").alias("DTI_RISK_CAT"),
+            *[F.sum(c).alias(c) for c in ("BAD_0", "BAD_1", "Total")],
+        )
+        stratum.unionByName(totalRow).show(truncate=False)
     missing = homeEquityRisk.count() - crossSource.count()
     print(f"Frequency Missing = {missing}")
 
