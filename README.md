@@ -17,6 +17,14 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 
 ---
 
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for how the SAS programs, PySpark scripts, dataset and tests fit together: each PySpark script is a standalone local Spark job that reads the CSV itself and prints its results, while the SAS originals are reference code chained through the WORK library.
+
+![Architecture diagram](docs/diagrams/architecture.png)
+
+---
+
 ## Migration Examples
 
 | # | SAS Program | PySpark Script | Description |
@@ -56,18 +64,20 @@ The [`migration_guide/`](migration_guide/) folder contains detailed reference do
 
 ### Prerequisites
 
-- Python 3.8+
-- Java 8 or 11 (required by PySpark)
+- Python 3.11+ (required by PySpark 4.x, which `pip install pyspark` installs today)
+- Java 17 or later (required by Spark 4.x)
 
 ### Installation
 
 ```bash
-pip install pyspark
+pip install pyspark numpy pytest
 ```
+
+`numpy` is needed by `pyspark.ml` (script 5 and its test); `pytest` is only needed for the tests.
 
 ### Running the PySpark Scripts
 
-Each script is self-contained and can be run independently:
+Each script is self-contained and can be run independently. Each reads `data/home_equity.csv` by a relative path, so run them from the repository root (from another directory Spark fails with `PATH_NOT_FOUND`). Results are printed to the console; nothing is written to disk.
 
 ```bash
 # From the repository root directory
@@ -126,6 +136,12 @@ Source: [COG-GTM/sas-viya-quick-start](https://github.com/COG-GTM/sas-viya-quick
 ```
 sas-to-pyspark-migration/
 ├── README.md                                  # This file
+├── docs/
+│   ├── architecture.md                        # How the parts fit together
+│   └── diagrams/
+│       ├── architecture.dot                   # Diagram source (Graphviz)
+│       ├── architecture.png / .svg            # Rendered diagram
+│       └── render.sh                          # Re-renders the diagram
 ├── data/
 │   └── home_equity.csv                        # Home equity loan dataset (5,960 records)
 ├── sas/
@@ -144,7 +160,7 @@ sas-to-pyspark-migration/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples
 └── tests/
-    └── test_pyspark_outputs.py                # Validation tests for all PySpark scripts
+    └── test_pyspark_outputs.py                # 14 checks re-implementing each stage's logic
 ```
 
 ---

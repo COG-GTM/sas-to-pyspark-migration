@@ -1,0 +1,58 @@
+// Architecture of sas-to-pyspark-migration (main).
+// Source of docs/diagrams/architecture.png and .svg; re-render with render.sh.
+digraph architecture {
+  graph [rankdir=TB, compound=true, newrank=true, fontname="DejaVu Sans", fontsize=20,
+         nodesep=0.3, ranksep=0.7, pad=0.3, labelloc=t,
+         label="sas-to-pyspark-migration: what runs, what it reads, what it checks"];
+  node  [shape=box, style="rounded,filled", fontname="DejaVu Sans", fontsize=16,
+         fillcolor=white, color="#555555", width=3.2];
+  edge  [fontname="DejaVu Sans", fontsize=14, color="#555555"];
+
+  guide [label="migration_guide/\nsas_to_pyspark_mapping.md\ncommon_patterns.md\n(construct-by-construct reference)", shape=note, fillcolor="#F2F2F2"];
+  csv   [label="data/home_equity.csv\n5,960 rows x 18 columns", shape=cylinder, fillcolor="#FFF2CC"];
+  t     [label="tests/test_pyspark_outputs.py\n14 unittest/pytest checks that\nre-implement the stage logic inline\n(they do not import the scripts)", fillcolor="#FCE4D6"];
+
+  subgraph cluster_sas {
+    label="sas/  (reference programs: not run by this repo; chained through the SAS WORK library)";
+    style="rounded,dashed"; color="#999999"; fontsize=16;
+    node [fillcolor="#EDEDED"];
+    s1 [label="01_data_loading.sas\nPROC IMPORT, CONTENTS, PRINT\n-> work.home_equity"];
+    s2 [label="02_data_cleaning.sas\nDATA steps, arrays, PROC MEANS\n-> work.home_equity_final"];
+    s3 [label="03_aggregation_reporting.sas\nPROC FREQ, MEANS,\nTABULATE, SQL"];
+    s4 [label="04_risk_segmentation.sas\nPROC FORMAT, risk score\n-> work.home_equity_risk"];
+    s5 [label="05_logistic_regression.sas\nPROC SURVEYSELECT,\nLOGISTIC, PLM"];
+    s1 -> s2 -> s3 -> s4 -> s5 [style=invis];
+  }
+
+  subgraph cluster_pyspark {
+    label="pyspark/  (5 standalone scripts; each starts its own local[*] SparkSession, re-reads the CSV and repeats the cleaning it needs)";
+    style=rounded; color="#2F6FB0"; fontsize=16;
+    node [fillcolor="#DDEBF7"];
+    p1 [label="01_data_loading.py\nread.csv, printSchema,\nshow"];
+    p2 [label="02_data_cleaning.py\nLTV, LOAN_OUTCOME,\n*_MISS flags, filter,\ndescribe, approxQuantile"];
+    p3 [label="03_aggregation_reporting.py\ngroupBy/agg, crosstab,\ntemp view + spark.sql"];
+    p4 [label="04_risk_segmentation.py\nLTV/DTI/DELINQ buckets,\nRISK_SCORE 0-10,\nRISK_SEGMENT"];
+    p5 [label="05_logistic_regression.py\nPipeline: StringIndexer,\nOneHotEncoder, VectorAssembler,\nLogisticRegression;\nAUC, AUPR, confusion matrix"];
+    p1 -> p2 -> p3 -> p4 -> p5 [style=invis];
+  }
+
+  stdout [label="Console output only\n(no files or tables written)", shape=note, fillcolor="#E2EFDA"];
+
+  { rank=same; guide; csv; t; }
+  { rank=same; s1; s2; s3; s4; s5; }
+  { rank=same; p1; p2; p3; p4; p5; }
+
+  guide -> csv [style=invis];
+  csv -> t [label="path built\nfrom __file__"];
+  guide -> s1 [style=dotted, arrowhead=none, color="#999999", lhead=cluster_sas];
+  csv -> s3 [style=dashed, lhead=cluster_sas, label="  /data/home_equity.csv (absolute)"];
+
+  s1 -> p1 [style=dashed, color="#999999", label=" ported to"];
+  s2 -> p2 [style=dashed, color="#999999", label=" ported to"];
+  s3 -> p3 [style=dashed, color="#999999", label=" ported to"];
+  s4 -> p4 [style=dashed, color="#999999", label=" ported to"];
+  s5 -> p5 [style=dashed, color="#999999", label=" ported to"];
+
+  csv -> p5 [lhead=cluster_pyspark, constraint=false, label="relative path data/home_equity.csv\n(run from the repo root)"];
+  p3 -> stdout [ltail=cluster_pyspark];
+}
