@@ -39,5 +39,5 @@ The diagram source is [`diagrams/architecture.dot`](diagrams/architecture.dot) (
 
 ## Runtime
 
-- Spark runs in local mode inside the Python process (`local[*]`); there is no cluster, database or external service.
+- Spark runs in local mode (`local[*]`): PySpark launches a local JVM that runs the driver and executor threads and talks to Python over Py4J. Java is required, but there is no cluster, database or external service.
 - `pip install pyspark` currently installs PySpark 4.x, which needs Python 3.11+ and Java 17+. `pyspark.ml` (script 5 and its test) also needs `numpy`.
