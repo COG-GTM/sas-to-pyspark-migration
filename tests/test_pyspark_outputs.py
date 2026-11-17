@@ -6,8 +6,10 @@ Ensures correctness of the migrated SAS-to-PySpark logic.
 
 import unittest
 import os
+import subprocess
+import sys
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, lit, mean, count
+from pyspark.sql.functions import col, when, lit, mean, count, abs as sparkAbs
 
 
 class TestHomeEquityPySpark(unittest.TestCase):
@@ -137,6 +139,124 @@ class TestHomeEquityPySpark(unittest.TestCase):
         self.assertEqual(
             dfFiltered.filter(col("BAD").isNull()).count(), 0
         )
+
+    # ------------------------------------------------------------------
+    # Test 02: Data Cleaning - pyspark/02_data_cleaning.py
+    # ------------------------------------------------------------------
+    MISS_FLAG_VARS = ["LOAN", "MORTDUE", "VALUE", "YOJ", "DEROG", "DELINQ", "CLAGE", "NINQ"]
+
+    def _build_cleaning_stages(self):
+        """Rebuild the 02_data_cleaning.py steps: (imputed, filtered, final)."""
+        dfImputed = self.df.withColumn(
+            "LTV",
+            when(
+                col("VALUE").isNotNull() &
+                col("MORTDUE").isNotNull() &
+                (col("VALUE") > 0),
+                col("MORTDUE") / col("VALUE")
+            )
+        ).withColumn(
+            "LOAN_OUTCOME",
+            when(col("BAD") == 0, lit("Paid"))
+            .when(col("BAD") == 1, lit("Default"))
+            .otherwise(lit(""))
+        )
+        for varName in self.MISS_FLAG_VARS:
+            dfImputed = dfImputed.withColumn(
+                f"{varName}_MISS",
+                when(col(varName).isNull(), lit(1)).otherwise(lit(0))
+            )
+
+        dfFiltered = dfImputed.filter(
+            col("LOAN").isNotNull() &
+            col("VALUE").isNotNull() &
+            col("BAD").isNotNull()
+        )
+        dfFinal = dfFiltered.filter(
+            (col("LTV") > 0) & (col("LTV") < 5) &
+            (col("LOAN") > 0) &
+            (col("VALUE") > 0)
+        )
+        return dfImputed, dfFiltered, dfFinal
+
+    def test_cleaning_row_counts(self):
+        """Verify row counts after the critical-field filter and outlier removal."""
+        _, dfFiltered, dfFinal = self._build_cleaning_stages()
+        self.assertEqual(dfFiltered.count(), 5848)
+        self.assertEqual(dfFinal.count(), 5337)
+
+    def test_cleaning_derived_columns_exist(self):
+        """Verify LTV, LOAN_OUTCOME and all *_MISS flag columns are created."""
+        dfImputed, _, dfFinal = self._build_cleaning_stages()
+        expected = ["LTV", "LOAN_OUTCOME"] + [f"{v}_MISS" for v in self.MISS_FLAG_VARS]
+        for colName in expected:
+            self.assertIn(colName, dfImputed.columns)
+            self.assertIn(colName, dfFinal.columns)
+
+    def test_missing_flags_match_nulls(self):
+        """Verify each *_MISS flag is 1 exactly where its source column is null."""
+        dfImputed, _, _ = self._build_cleaning_stages()
+        for varName in self.MISS_FLAG_VARS:
+            flagCol = f"{varName}_MISS"
+            mismatches = dfImputed.filter(
+                (col(varName).isNull() & (col(flagCol) != 1)) |
+                (col(varName).isNotNull() & (col(flagCol) != 0))
+            ).count()
+            self.assertEqual(mismatches, 0, f"{flagCol} does not match nulls in {varName}")
+
+    def test_cleaning_ltv_correctness(self):
+        """Verify LTV = MORTDUE / VALUE, null when inputs are missing, and in (0, 5) after cleaning."""
+        dfImputed, _, dfFinal = self._build_cleaning_stages()
+
+        badLtv = dfFinal.filter(
+            sparkAbs(col("LTV") - col("MORTDUE") / col("VALUE")) > 1e-9
+        ).count()
+        self.assertEqual(badLtv, 0)
+
+        self.assertEqual(
+            dfImputed.filter(
+                (col("MORTDUE").isNull() | col("VALUE").isNull()) & col("LTV").isNotNull()
+            ).count(),
+            0
+        )
+
+        self.assertEqual(
+            dfFinal.filter((col("LTV") <= 0) | (col("LTV") >= 5) | col("LTV").isNull()).count(),
+            0
+        )
+
+        sample = dfFinal.filter(
+            (col("MORTDUE") == 25860) & (col("VALUE") == 39025)
+        ).select("LTV").collect()
+        self.assertTrue(len(sample) > 0)
+        self.assertAlmostEqual(sample[0]["LTV"], 25860 / 39025, places=6)
+
+    def test_cleaning_loan_outcome_mapping(self):
+        """Verify LOAN_OUTCOME maps BAD 0 -> 'Paid', 1 -> 'Default', else ''."""
+        dfImputed, _, _ = self._build_cleaning_stages()
+        mapping = {
+            (row["BAD"], row["LOAN_OUTCOME"])
+            for row in dfImputed.select("BAD", "LOAN_OUTCOME").distinct().collect()
+        }
+        for bad, outcome in mapping:
+            expected = {0: "Paid", 1: "Default"}.get(bad, "")
+            self.assertEqual(outcome, expected, f"BAD={bad} mapped to {outcome!r}")
+        self.assertIn((0, "Paid"), mapping)
+        self.assertIn((1, "Default"), mapping)
+
+    def test_data_cleaning_script_runs(self):
+        """Run pyspark/02_data_cleaning.py end to end and check its reported counts."""
+        projectRoot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        scriptPath = os.path.join(projectRoot, "pyspark", "02_data_cleaning.py")
+        result = subprocess.run(
+            [sys.executable, scriptPath],
+            capture_output=True, text=True, timeout=600
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        self.assertRegex(result.stdout, r"After critical filter:\s+5848")
+        self.assertRegex(result.stdout, r"Final clean rows:\s+5337")
+        self.assertIn("Summary Statistics for Outlier Detection", result.stdout)
+        self.assertIn("LOAN_OUTCOME", result.stdout)
 
     # ------------------------------------------------------------------
     # Test 03: Aggregation and Reporting
