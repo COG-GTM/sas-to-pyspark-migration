@@ -4,6 +4,7 @@ Purpose: Validate PySpark transformations against expected outputs
 Ensures correctness of the migrated SAS-to-PySpark logic.
 """
 
+import importlib.util
 import unittest
 import os
 from pyspark.sql import SparkSession
@@ -29,6 +30,15 @@ class TestHomeEquityPySpark(unittest.TestCase):
         dataPath = os.path.join(projectRoot, "data", "home_equity.csv")
 
         cls.df = cls.spark.read.csv(dataPath, header=True, inferSchema=True)
+
+        # Import pyspark/02_data_cleaning.py (file name starts with a digit)
+        spec = importlib.util.spec_from_file_location(
+            "data_cleaning",
+            os.path.join(projectRoot, "pyspark", "02_data_cleaning.py")
+        )
+        cls.cleaning = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.cleaning)
+        cls.cleaned = cls.cleaning.clean(cls.df)
 
     @classmethod
     def tearDownClass(cls):
@@ -67,76 +77,88 @@ class TestHomeEquityPySpark(unittest.TestCase):
         self.assertEqual(len(self.df.columns), 18)
 
     # ------------------------------------------------------------------
-    # Test 02: Data Cleaning - Derived Columns
+    # Test 02: Data Cleaning - validates pyspark/02_data_cleaning.py
     # ------------------------------------------------------------------
     def test_ltv_calculation(self):
-        """Verify LTV (Loan-to-Value) is computed correctly."""
-        dfClean = self.df.withColumn(
-            "LTV",
-            when(
-                (col("VALUE").isNotNull()) &
-                (col("MORTDUE").isNotNull()) &
-                (col("VALUE") > 0),
-                col("MORTDUE") / col("VALUE")
-            )
-        )
+        """Verify LTV (Loan-to-Value) from the cleaning script."""
+        dfClean = self.cleaned["home_equity_clean"]
         self.assertIn("LTV", dfClean.columns)
 
-        # LTV should be positive where computed
-        validLtv = dfClean.filter(col("LTV").isNotNull())
-        self.assertTrue(validLtv.count() > 0, "No valid LTV values computed")
+        # LTV is null exactly when VALUE/MORTDUE is missing or VALUE <= 0
+        expectedNull = self.df.filter(
+            col("VALUE").isNull() | col("MORTDUE").isNull() |
+            (col("VALUE") <= 0)
+        ).count()
+        self.assertEqual(dfClean.filter(col("LTV").isNull()).count(),
+                         expectedNull)
+        self.assertTrue(dfClean.filter(col("LTV").isNotNull()).count() > 0)
 
-        # Check a known calculation: row where MORTDUE=25860, VALUE=39025
-        # LTV should be approximately 0.6627
+        # Known row: MORTDUE=25860, VALUE=39025 -> LTV ~ 0.6627
         sample = dfClean.filter(
             (col("MORTDUE") == 25860) & (col("VALUE") == 39025)
         ).select("LTV").collect()
-        if len(sample) > 0:
-            ltv = sample[0]["LTV"]
-            self.assertAlmostEqual(ltv, 25860 / 39025, places=4)
+        self.assertEqual(len(sample), 1)
+        self.assertAlmostEqual(sample[0]["LTV"], 25860 / 39025, places=4)
+
+        # Final dataset keeps only 0 < LTV < 5
+        dfFinal = self.cleaned["home_equity_final"]
+        self.assertEqual(
+            dfFinal.filter(
+                col("LTV").isNull() | (col("LTV") <= 0) | (col("LTV") >= 5)
+            ).count(), 0
+        )
 
     def test_loan_outcome_derivation(self):
-        """Verify LOAN_OUTCOME is derived correctly from BAD."""
-        dfClean = self.df.withColumn(
-            "LOAN_OUTCOME",
-            when(col("BAD") == 0, lit("Paid"))
-            .when(col("BAD") == 1, lit("Default"))
-        )
+        """Verify LOAN_OUTCOME and missing flags from the cleaning script."""
+        dfClean = self.cleaned["home_equity_clean"]
         self.assertIn("LOAN_OUTCOME", dfClean.columns)
 
-        # All BAD=0 should map to 'Paid'
-        paidCount = dfClean.filter(
-            (col("BAD") == 0) & (col("LOAN_OUTCOME") == "Paid")
-        ).count()
-        totalPaid = self.df.filter(col("BAD") == 0).count()
-        self.assertEqual(paidCount, totalPaid)
+        outcomes = {
+            (row["BAD"], row["LOAN_OUTCOME"]): row["count"]
+            for row in dfClean.groupBy("BAD", "LOAN_OUTCOME").count().collect()
+        }
+        self.assertEqual(set(outcomes), {(0, "Paid"), (1, "Default")})
+        self.assertEqual(outcomes[(0, "Paid")],
+                         self.df.filter(col("BAD") == 0).count())
+        self.assertEqual(outcomes[(1, "Default")],
+                         self.df.filter(col("BAD") == 1).count())
 
-        # All BAD=1 should map to 'Default'
-        defaultCount = dfClean.filter(
-            (col("BAD") == 1) & (col("LOAN_OUTCOME") == "Default")
-        ).count()
-        totalDefault = self.df.filter(col("BAD") == 1).count()
-        self.assertEqual(defaultCount, totalDefault)
+        # SAS propcase splits on hyphens too (initcap alone would not)
+        cities = {
+            row["CITY"] for row in dfClean.select("CITY").distinct().collect()
+        }
+        self.assertIn("Winston-Salem", cities)
+
+        # Array step: <VAR>_MISS flags match the source null counts
+        dfImputed = self.cleaned["home_equity_imputed"]
+        for varName in self.cleaning.MISSING_FLAG_VARS:
+            flagged = dfImputed.filter(col(f"{varName}_MISS") == 1).count()
+            self.assertEqual(flagged,
+                             self.df.filter(col(varName).isNull()).count())
 
     def test_filtering_removes_nulls(self):
-        """Verify filtering removes records with null critical fields."""
-        dfFiltered = self.df.filter(
-            col("LOAN").isNotNull() &
-            col("VALUE").isNotNull() &
-            col("BAD").isNotNull()
-        )
-        # Should have fewer or equal rows
-        self.assertLessEqual(dfFiltered.count(), self.df.count())
-        # No nulls in critical columns
+        """Verify the script's filters drop null critical fields/outliers."""
+        dfFiltered = self.cleaned["home_equity_filtered"]
+        self.assertLess(dfFiltered.count(), self.df.count())
+        for colName in ("LOAN", "VALUE", "BAD"):
+            self.assertEqual(
+                dfFiltered.filter(col(colName).isNull()).count(), 0
+            )
+
+        dfFinal = self.cleaned["home_equity_final"]
+        self.assertLessEqual(dfFinal.count(), dfFiltered.count())
         self.assertEqual(
-            dfFiltered.filter(col("LOAN").isNull()).count(), 0
+            dfFinal.filter((col("LOAN") <= 0) | (col("VALUE") <= 0)).count(),
+            0
         )
-        self.assertEqual(
-            dfFiltered.filter(col("VALUE").isNull()).count(), 0
-        )
-        self.assertEqual(
-            dfFiltered.filter(col("BAD").isNull()).count(), 0
-        )
+
+        # PROC MEANS equivalent returns one row per variable
+        stats = self.cleaning.proc_means(
+            dfFinal, ["LOAN", "LTV"], ["N", "NMiss", "Mean", "Min", "Max"]
+        ).collect()
+        self.assertEqual([row["Variable"] for row in stats], ["LOAN", "LTV"])
+        self.assertEqual(stats[0]["N"], dfFinal.count())
+        self.assertEqual(stats[0]["NMiss"], 0)
 
     # ------------------------------------------------------------------
     # Test 03: Aggregation and Reporting
