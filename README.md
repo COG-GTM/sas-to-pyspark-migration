@@ -26,6 +26,7 @@ Built for teams evaluating a move from SAS to open-source distributed computing 
 | 3 | `sas/03_aggregation_reporting.sas` | `pyspark/03_aggregation_reporting.py` | Frequency tables, summary statistics, cross-tabulation, SQL queries |
 | 4 | `sas/04_risk_segmentation.sas` | `pyspark/04_risk_segmentation.py` | Risk bucketing (LTV, DTI, delinquency), composite scoring, segment analysis |
 | 5 | `sas/05_logistic_regression.sas` | `pyspark/05_logistic_regression.py` | Logistic regression with feature engineering, model evaluation, AUC/confusion matrix |
+| 6 | `sas/06_simple_ltv_bands.sas` | `pyspark/06_simple_ltv_bands.py` | Minimal end-to-end example: filter, derive LTV band, PROC MEANS summary, with a parity test and an input-vs-output comparison page |
 
 ---
 
@@ -76,6 +77,18 @@ python pyspark/02_data_cleaning.py
 python pyspark/03_aggregation_reporting.py
 python pyspark/04_risk_segmentation.py
 python pyspark/05_logistic_regression.py
+python pyspark/06_simple_ltv_bands.py
+```
+
+### Simple Example: Input vs Output (06)
+
+`sas/06_simple_ltv_bands.sas` is a short, easy-to-follow migration (DATA step + PROC MEANS). No SAS runtime is needed to check it:
+
+```bash
+python tests/sas_reference.py            # SAS logic in plain Python -> expected/06_ltv_band_summary_sas_expected.csv
+python pyspark/06_simple_ltv_bands.py    # PySpark port -> output/06_ltv_band_summary_pyspark.csv
+python -m pytest tests/test_06_simple_ltv_bands.py -v
+python tools/build_06_comparison_page.py # docs/06_ltv_bands_comparison.html (input, SAS-expected, PySpark side by side)
 ```
 
 ### Running the Tests
