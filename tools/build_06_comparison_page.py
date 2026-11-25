@@ -48,10 +48,12 @@ def table(headers, rows, cls=""):
     return f'<table class="{cls}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
 
 
-def code_block(path, start_marker, end_line):
-    """Lines from the first containing start_marker through the next line equal to end_line (ignoring trailing spaces)."""
+def code_block(path, start_marker, end_line, after=None):
+    """Lines from the first containing start_marker (past the line containing `after`, if given)
+    through the next line equal to end_line (ignoring trailing spaces)."""
     lines = open(path).read().splitlines()
-    s = next(i for i, l in enumerate(lines) if start_marker in l)
+    a = next(i for i, l in enumerate(lines) if after in l) if after else -1
+    s = next(i for i, l in enumerate(lines) if i > a and start_marker in l)
     e = next(i for i, l in enumerate(lines) if i > s and l.rstrip() == end_line)
     return html.escape("\n".join(lines[s:e + 1]))
 
@@ -130,7 +132,7 @@ def main():
     sas_data = code_block(os.path.join(PROJECT_ROOT, "sas", "06_simple_ltv_bands.sas"), "data work.ltv_bands", "run;")
     sas_means = code_block(os.path.join(PROJECT_ROOT, "sas", "06_simple_ltv_bands.sas"), "proc means", "run;")
     py_bands = code_block(simple_ltv_bands.__file__, "ltv = when(", "    )")
-    py_sum = code_block(simple_ltv_bands.__file__, "bands.groupBy", "    )")
+    py_sum = code_block(simple_ltv_bands.__file__, "return (", "    )", after="def summarize_ltv_bands")
 
     page = f"""<!doctype html><html><head><meta charset="utf-8">
 <title>SAS to PySpark: LTV band example</title>
