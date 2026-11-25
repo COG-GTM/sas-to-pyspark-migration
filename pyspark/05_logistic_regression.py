@@ -60,7 +60,7 @@ modelData = df.filter(
 )
 
 # Cast BAD to double for ML
-modelData = modelData.withColumn("label", col("BAD").cast("double"))
+modelData = modelData.withColumn("label", col("BAD").cast("double")).cache()
 
 print(f"Modeling dataset size: {modelData.count()} rows")
 
@@ -166,7 +166,7 @@ for i, coef in enumerate(lrModel.coefficients):
 #       score data=work.valid out=work.valid_scored predicted=pred_prob;
 #   run;
 # ------------------------------------------------------------------
-predictions = model.transform(valid)
+predictions = model.transform(valid).cache()
 
 # ------------------------------------------------------------------
 # Step 6: Create confusion matrix
@@ -245,11 +245,9 @@ print("Predicted Probability Distribution by Actual Outcome")
 print("=" * 60)
 
 # Extract probability of default (class 1)
-from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
+from pyspark.ml.functions import vector_to_array
 
-extractProb = udf(lambda v: float(v[1]), DoubleType())
-predictions = predictions.withColumn("pred_prob", extractProb(col("probability")))
+predictions = predictions.withColumn("pred_prob", vector_to_array(col("probability"))[1])
 
 predictions.groupBy("label") \
     .agg(
