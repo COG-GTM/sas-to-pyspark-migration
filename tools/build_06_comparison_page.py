@@ -16,7 +16,7 @@ from pyspark.sql import SparkSession
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "tests"))
-from sas_reference import DATA_PATH, EXPECTED_PATH, ltv_band_rows  # noqa: E402
+from sas_reference import DATA_PATH, EXPECTED_PATH, ltv_band_rows, row_key  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location(
     "simple_ltv_bands", os.path.join(PROJECT_ROOT, "pyspark", "06_simple_ltv_bands.py"))
@@ -65,14 +65,14 @@ def main():
     df = spark.read.csv(DATA_PATH, header=True, inferSchema=True)
     input_count = df.count()
     bands_df = simple_ltv_bands.build_ltv_bands(df)
-    spark_bands = [r.asDict() for r in bands_df.collect()]
+    spark_bands = sorted((r.asDict() for r in bands_df.collect()), key=row_key)
     spark_summary = [r.asDict() for r in simple_ltv_bands.summarize_ltv_bands(bands_df).collect()]
     spark_version = spark.version
     spark.stop()
 
     with open(DATA_PATH, newline="", encoding="utf-8-sig") as f:
         raw = list(csv.DictReader(f))
-    ref_bands = ltv_band_rows()
+    ref_bands = sorted(ltv_band_rows(), key=row_key)
     with open(EXPECTED_PATH, newline="") as f:
         expected = list(csv.DictReader(f))
 
@@ -166,7 +166,7 @@ th.sasg{{background:#dbe8fb}} th.spkg{{background:#fde4d8}}
 <div class="grid"><div><p class="lbl sas">SAS</p><pre>{sas_data}\n\n{sas_means}</pre></div>
 <div><p class="lbl spk">PySpark</p><pre>{py_bands}\n\n{py_sum}</pre></div></div></section>
 
-<section><h2>3. Row-level output: SAS-expected vs PySpark</h2><p class="sub">First {SAMPLE_ROWS} rows after the filter; all {len(spark_bands):,} rows are compared, {row_mismatches} mismatches.</p>
+<section><h2>3. Row-level output: SAS-expected vs PySpark</h2><p class="sub">First {SAMPLE_ROWS} rows after the filter, both sides sorted by BAD, LOAN, MORTDUE, VALUE (Spark guarantees no row order); all {len(spark_bands):,} rows are compared, {row_mismatches} mismatches.</p>
 <table><thead><tr><th>LOAN</th><th>MORTDUE</th><th>VALUE</th><th class="sasg">SAS LTV</th><th class="sasg">SAS LTV_BAND</th><th class="spkg">PySpark LTV</th><th class="spkg">PySpark LTV_BAND</th><th>Check</th></tr></thead>
 <tbody>{"".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in row_cmp)}</tbody></table></section>
 

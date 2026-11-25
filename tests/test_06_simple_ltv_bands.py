@@ -16,7 +16,7 @@ import unittest
 from pyspark.sql import SparkSession
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sas_reference import EXPECTED_PATH, ltv_band_rows, ltv_band_summary  # noqa: E402
+from sas_reference import EXPECTED_PATH, ltv_band_rows, ltv_band_summary, row_key  # noqa: E402
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT_PATH = os.path.join(PROJECT_ROOT, "pyspark", "06_simple_ltv_bands.py")
@@ -56,8 +56,8 @@ class TestSimpleLtvBandsParity(unittest.TestCase):
 
     def test_row_level_parity(self):
         """Every banded input row matches the SAS reference (count, LTV, band)."""
-        reference = ltv_band_rows()
-        spark_rows = [r.asDict() for r in self.bands.collect()]
+        reference = sorted(ltv_band_rows(), key=row_key)
+        spark_rows = sorted((r.asDict() for r in self.bands.collect()), key=row_key)
         self.assertEqual(len(spark_rows), len(reference))
         for got, exp in zip(spark_rows, reference):
             for column in ("BAD", "LOAN", "MORTDUE", "VALUE", "LTV_BAND"):
