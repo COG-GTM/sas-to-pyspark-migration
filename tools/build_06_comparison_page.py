@@ -85,13 +85,14 @@ def main():
                    fmt(r["REASON"]), filter_result(r)] for i, r in enumerate(raw[:SAMPLE_ROWS])]
 
     # --- row-level comparison --------------------------------------------------------
-    row_mismatches = 0
+    row_matches = 0
     for s, e in zip(spark_bands, ref_bands):
         same_ltv = (s["LTV"] is None and e["LTV"] is None) or (
             s["LTV"] is not None and e["LTV"] is not None and abs(s["LTV"] - e["LTV"]) <= 1e-12)
-        if not (same_ltv and s["LTV_BAND"] == e["LTV_BAND"]):
-            row_mismatches += 1
-    row_mismatches += abs(len(spark_bands) - len(ref_bands))
+        if same_ltv and s["LTV_BAND"] == e["LTV_BAND"]:
+            row_matches += 1
+    row_total = max(len(spark_bands), len(ref_bands))
+    row_mismatches = row_total - row_matches
     row_cmp = []
     for s, e in list(zip(spark_bands, ref_bands))[:SAMPLE_ROWS]:
         ok = s["LTV_BAND"] == e["LTV_BAND"] and ((s["LTV"] is None) == (e["LTV"] is None))
@@ -101,21 +102,22 @@ def main():
                         '<span class="ok">MATCH</span>' if ok else '<span class="bad">DIFF</span>'])
 
     # --- summary comparison ----------------------------------------------------------
-    sum_rows, sum_ok = [], len(expected) == len(spark_summary)
+    sum_rows, sum_matches = [], 0
+    sum_total = max(len(expected), len(spark_summary))
     for e, s in zip(expected, spark_summary):
         d_avg = abs(float(e["AVG_LOAN"]) - s["AVG_LOAN"])
         d_rate = abs(float(e["DEFAULT_RATE"]) - s["DEFAULT_RATE"])
         ok = e["LTV_BAND"] == s["LTV_BAND"] and int(e["N_LOANS"]) == s["N_LOANS"] and d_avg <= TOL and d_rate <= TOL
-        sum_ok &= ok
+        sum_matches += ok
         sum_rows.append([f'<b>{e["LTV_BAND"]}</b>', fmt(float(e["N_LOANS"])), fmt(e["AVG_LOAN"], "money"),
                          fmt(e["DEFAULT_RATE"], "pct"), fmt(float(s["N_LOANS"])), fmt(s["AVG_LOAN"], "money"),
                          fmt(s["DEFAULT_RATE"], "pct"), f"{max(d_avg, d_rate):.1e}",
                          '<span class="ok">MATCH</span>' if ok else '<span class="bad">DIFF</span>'])
 
-    verdict_ok = sum_ok and row_mismatches == 0
+    verdict_ok = row_mismatches == 0 and sum_matches == sum_total
     verdict = (f'<div class="verdict {"pass" if verdict_ok else "fail"}">'
-               f'{"PARITY PASS" if verdict_ok else "PARITY FAIL"}: {len(spark_bands):,} of {len(ref_bands):,} rows match, '
-               f'{row_mismatches} row mismatches; {len(spark_summary)} of {len(expected)} summary rows match '
+               f'{"PARITY PASS" if verdict_ok else "PARITY FAIL"}: {row_matches:,} of {row_total:,} rows match, '
+               f'{row_mismatches} row mismatches; {sum_matches} of {sum_total} summary rows match '
                f'(tolerance {TOL:g}).</div>')
 
     sas_data = code_block(os.path.join(PROJECT_ROOT, "sas", "06_simple_ltv_bands.sas"), "data work.ltv_bands", "run;")
