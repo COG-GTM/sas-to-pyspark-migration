@@ -58,7 +58,7 @@ The [`migration_guide/`](migration_guide/) folder contains detailed reference do
 ### Prerequisites
 
 - Python 3.8+
-- Java 8 or 11 (required by PySpark)
+- Java 17 or later (required by PySpark 4.x, which `pip install pyspark` installs)
 
 ### Installation
 
