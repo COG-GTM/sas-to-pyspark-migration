@@ -66,6 +66,14 @@ def summarize_ltv_bands(bands: DataFrame) -> DataFrame:
     )
 
 
+def write_summary_csv(summary: DataFrame, path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(summary.columns)
+        writer.writerows(summary.collect())
+
+
 def main() -> None:
     spark = SparkSession.builder \
         .appName("HomeEquity_SimpleLtvBands") \
@@ -80,11 +88,7 @@ def main() -> None:
     print("=== Loans and Default Rate by LTV Band ===")
     summary.show(truncate=False)
 
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    with open(OUTPUT_PATH, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(summary.columns)
-        writer.writerows(summary.collect())
+    write_summary_csv(summary, OUTPUT_PATH)
     print(f"Wrote {OUTPUT_PATH}")
 
     spark.stop()

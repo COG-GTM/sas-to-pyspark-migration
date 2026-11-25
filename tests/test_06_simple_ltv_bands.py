@@ -9,6 +9,7 @@ missing-value semantics; no SAS runtime was used.
 import csv
 import importlib.util
 import os
+import tempfile
 import unittest
 
 from pyspark.sql import SparkSession
@@ -57,7 +58,8 @@ class TestSimpleLtvBandsParity(unittest.TestCase):
         spark_rows = [r.asDict() for r in self.bands.collect()]
         self.assertEqual(len(spark_rows), len(reference))
         for got, exp in zip(spark_rows, reference):
-            self.assertEqual(got["LTV_BAND"], exp["LTV_BAND"])
+            for column in ("BAD", "LOAN", "MORTDUE", "VALUE", "LTV_BAND"):
+                self.assertEqual(got[column], exp[column], column)
             if exp["LTV"] is None:
                 self.assertIsNone(got["LTV"])
             else:
@@ -70,6 +72,21 @@ class TestSimpleLtvBandsParity(unittest.TestCase):
             self.assertEqual(got["N_LOANS"], int(exp["N_LOANS"]))
             self.assertAlmostEqual(got["AVG_LOAN"], float(exp["AVG_LOAN"]), places=9)
             self.assertAlmostEqual(got["DEFAULT_RATE"], float(exp["DEFAULT_RATE"]), places=9)
+
+    def test_exported_csv_matches_expected(self):
+        """The CSV written by the PySpark script matches the SAS-expected CSV."""
+        bands = simple_ltv_bands.summarize_ltv_bands(self.bands)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "summary.csv")
+            simple_ltv_bands.write_summary_csv(bands, path)
+            with open(path, newline="") as f:
+                exported = list(csv.DictReader(f))
+        self.assertEqual(list(exported[0].keys()), list(self.expected[0].keys()))
+        self.assertEqual([r["LTV_BAND"] for r in exported], [r["LTV_BAND"] for r in self.expected])
+        for got, exp in zip(exported, self.expected):
+            self.assertEqual(int(got["N_LOANS"]), int(exp["N_LOANS"]))
+            self.assertAlmostEqual(float(got["AVG_LOAN"]), float(exp["AVG_LOAN"]), places=9)
+            self.assertAlmostEqual(float(got["DEFAULT_RATE"]), float(exp["DEFAULT_RATE"]), places=9)
 
     def test_band_counts_add_up(self):
         """Summary N_LOANS totals the filtered row count."""
