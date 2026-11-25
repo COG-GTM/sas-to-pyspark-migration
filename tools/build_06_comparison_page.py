@@ -10,6 +10,8 @@ import html
 import importlib.util
 import os
 import sys
+from collections import defaultdict
+from itertools import zip_longest
 from datetime import datetime, timezone
 
 from pyspark.sql import SparkSession
@@ -89,26 +91,39 @@ def main():
 
     # --- row-level comparison --------------------------------------------------------
     def same_row(s, e):
+        if s is None or e is None:
+            return False
         if any(s[c] != e[c] for c in ("BAD", "LOAN", "MORTDUE", "VALUE", "REASON", "LTV_BAND")):
             return False
         if s["LTV"] is None or e["LTV"] is None:
             return s["LTV"] is None and e["LTV"] is None
         return abs(s["LTV"] - e["LTV"]) <= 1e-12
 
-    row_matches = sum(same_row(s, e) for s, e in zip(spark_bands, ref_bands))
-    row_total = max(len(spark_bands), len(ref_bands))
+    # Pair rows by identity key so one missing or extra row cannot shift every later pair.
+    def by_key(rows):
+        groups = defaultdict(list)
+        for r in rows:
+            groups[row_key(r)].append(r)
+        return groups
+
+    spk_groups, ref_groups = by_key(spark_bands), by_key(ref_bands)
+    pairs = [pair for k in sorted(spk_groups.keys() | ref_groups.keys())
+             for pair in zip_longest(spk_groups.get(k, []), ref_groups.get(k, []))]
+    row_matches = sum(same_row(s, e) for s, e in pairs)
+    row_total = len(pairs)
     row_mismatches = row_total - row_matches
+    absent = '<span class="miss">absent</span>'
     row_cmp = []
-    for s, e in list(zip(spark_bands, ref_bands))[:SAMPLE_ROWS]:
-        row_cmp.append([fmt(e["LOAN"]), fmt(e["MORTDUE"]), fmt(e["VALUE"]),
-                        fmt(e["LTV"], "ratio"), f'<b>{html.escape(e["LTV_BAND"])}</b>',
-                        fmt(s["LTV"], "ratio"), f'<b>{html.escape(s["LTV_BAND"])}</b>',
+    for s, e in pairs[:SAMPLE_ROWS]:
+        ident = s or e
+        row_cmp.append([fmt(ident["LOAN"]), fmt(ident["MORTDUE"]), fmt(ident["VALUE"]),
+                        *([fmt(e["LTV"], "ratio"), f'<b>{html.escape(e["LTV_BAND"])}</b>'] if e else [absent] * 2),
+                        *([fmt(s["LTV"], "ratio"), f'<b>{html.escape(s["LTV_BAND"])}</b>'] if s else [absent] * 2),
                         '<span class="ok">MATCH</span>' if same_row(s, e) else '<span class="bad">DIFF</span>'])
 
     # --- summary comparison ----------------------------------------------------------
     exp_by_band = {r["LTV_BAND"]: r for r in expected}
     spk_by_band = {r["LTV_BAND"]: r for r in spark_summary}
-    absent = '<span class="miss">absent</span>'
     sum_rows, sum_matches = [], 0
     sum_total = len(exp_by_band.keys() | spk_by_band.keys())
     for band in sorted(exp_by_band.keys() | spk_by_band.keys()):
@@ -166,7 +181,7 @@ th.sasg{{background:#dbe8fb}} th.spkg{{background:#fde4d8}}
 <div class="grid"><div><p class="lbl sas">SAS</p><pre>{sas_data}\n\n{sas_means}</pre></div>
 <div><p class="lbl spk">PySpark</p><pre>{py_bands}\n\n{py_sum}</pre></div></div></section>
 
-<section><h2>3. Row-level output: SAS-expected vs PySpark</h2><p class="sub">First {SAMPLE_ROWS} rows after the filter, both sides sorted by BAD, LOAN, MORTDUE, VALUE (Spark guarantees no row order); all {len(spark_bands):,} rows are compared, {row_mismatches} mismatches.</p>
+<section><h2>3. Row-level output: SAS-expected vs PySpark</h2><p class="sub">First {SAMPLE_ROWS} rows after the filter, rows paired by BAD, LOAN, MORTDUE, VALUE (Spark guarantees no row order); all {row_total:,} pairs are compared, {row_mismatches} mismatches.</p>
 <table><thead><tr><th>LOAN</th><th>MORTDUE</th><th>VALUE</th><th class="sasg">SAS LTV</th><th class="sasg">SAS LTV_BAND</th><th class="spkg">PySpark LTV</th><th class="spkg">PySpark LTV_BAND</th><th>Check</th></tr></thead>
 <tbody>{"".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in row_cmp)}</tbody></table></section>
 
