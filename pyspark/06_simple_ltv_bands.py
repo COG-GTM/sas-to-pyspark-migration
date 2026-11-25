@@ -19,7 +19,7 @@ def build_ltv_bands(df: DataFrame) -> DataFrame:
     """
     SAS equivalent:
         data work.ltv_bands;
-            set work.home_equity(keep=BAD LOAN MORTDUE VALUE REASON);
+            set work.he06_input(keep=BAD LOAN MORTDUE VALUE REASON);
             if LOAN ne . and VALUE ne . and VALUE > 0;
             if MORTDUE ne . then LTV = MORTDUE / VALUE;
             if LTV = . then LTV_BAND = 'UNKNOWN';

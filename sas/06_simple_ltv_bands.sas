@@ -8,7 +8,7 @@
 /*******************************************************************************/
 
 proc import datafile="data/home_equity.csv"
-    out=work.home_equity
+    out=work.he06_input
     dbms=csv
     replace;
     getnames=yes;
@@ -17,7 +17,7 @@ run;
 /* Step 1: DATA step - filter, derive LTV and band each row */
 data work.ltv_bands;
     length LTV_BAND $ 7;
-    set work.home_equity(keep=BAD LOAN MORTDUE VALUE REASON);
+    set work.he06_input(keep=BAD LOAN MORTDUE VALUE REASON);
 
     /* Subsetting IF: drop rows with no loan amount or property value */
     if LOAN ne . and VALUE ne . and VALUE > 0;
