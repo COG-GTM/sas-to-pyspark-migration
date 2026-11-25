@@ -63,7 +63,7 @@ The [`migration_guide/`](migration_guide/) folder contains detailed reference do
 ### Installation
 
 ```bash
-pip install pyspark
+pip install pyspark pytest
 ```
 
 ### Running the PySpark Scripts
