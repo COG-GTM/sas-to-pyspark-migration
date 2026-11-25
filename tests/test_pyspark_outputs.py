@@ -389,6 +389,15 @@ class TestHomeEquityPySpark(unittest.TestCase):
         auc = evaluator.evaluate(predictions)
         self.assertGreater(auc, 0.5, f"AUC ({auc:.4f}) should be > 0.5")
 
+        # pred_prob (as built in 05_logistic_regression.py) is the class-1 probability
+        from pyspark.ml.functions import vector_to_array
+        scored = predictions.withColumn(
+            "pred_prob", vector_to_array(col("probability"))[1]
+        ).select("probability", "pred_prob").collect()
+        self.assertTrue(len(scored) > 0)
+        for row in scored:
+            self.assertEqual(row["pred_prob"], float(row["probability"][1]))
+
 
 if __name__ == "__main__":
     unittest.main()
