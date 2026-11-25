@@ -48,10 +48,11 @@ def table(headers, rows, cls=""):
     return f'<table class="{cls}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
 
 
-def code_block(path, start_marker, end_marker):
+def code_block(path, start_marker, end_line):
+    """Lines from the first containing start_marker through the next line equal to end_line (ignoring trailing spaces)."""
     lines = open(path).read().splitlines()
     s = next(i for i, l in enumerate(lines) if start_marker in l)
-    e = next(i for i, l in enumerate(lines) if i > s and end_marker in l)
+    e = next(i for i, l in enumerate(lines) if i > s and l.rstrip() == end_line)
     return html.escape("\n".join(lines[s:e + 1]))
 
 
@@ -85,33 +86,39 @@ def main():
                    fmt(r["REASON"]), filter_result(r)] for i, r in enumerate(raw[:SAMPLE_ROWS])]
 
     # --- row-level comparison --------------------------------------------------------
-    row_matches = 0
-    for s, e in zip(spark_bands, ref_bands):
-        same_ltv = (s["LTV"] is None and e["LTV"] is None) or (
-            s["LTV"] is not None and e["LTV"] is not None and abs(s["LTV"] - e["LTV"]) <= 1e-12)
-        if same_ltv and s["LTV_BAND"] == e["LTV_BAND"]:
-            row_matches += 1
+    def same_row(s, e):
+        if any(s[c] != e[c] for c in ("BAD", "LOAN", "MORTDUE", "VALUE", "LTV_BAND")):
+            return False
+        if s["LTV"] is None or e["LTV"] is None:
+            return s["LTV"] is None and e["LTV"] is None
+        return abs(s["LTV"] - e["LTV"]) <= 1e-12
+
+    row_matches = sum(same_row(s, e) for s, e in zip(spark_bands, ref_bands))
     row_total = max(len(spark_bands), len(ref_bands))
     row_mismatches = row_total - row_matches
     row_cmp = []
     for s, e in list(zip(spark_bands, ref_bands))[:SAMPLE_ROWS]:
-        ok = s["LTV_BAND"] == e["LTV_BAND"] and ((s["LTV"] is None) == (e["LTV"] is None))
         row_cmp.append([fmt(e["LOAN"]), fmt(e["MORTDUE"]), fmt(e["VALUE"]),
-                        fmt(e["LTV"], "ratio"), f'<b>{e["LTV_BAND"]}</b>',
-                        fmt(s["LTV"], "ratio"), f'<b>{s["LTV_BAND"]}</b>',
-                        '<span class="ok">MATCH</span>' if ok else '<span class="bad">DIFF</span>'])
+                        fmt(e["LTV"], "ratio"), f'<b>{html.escape(e["LTV_BAND"])}</b>',
+                        fmt(s["LTV"], "ratio"), f'<b>{html.escape(s["LTV_BAND"])}</b>',
+                        '<span class="ok">MATCH</span>' if same_row(s, e) else '<span class="bad">DIFF</span>'])
 
     # --- summary comparison ----------------------------------------------------------
+    exp_by_band = {r["LTV_BAND"]: r for r in expected}
+    spk_by_band = {r["LTV_BAND"]: r for r in spark_summary}
+    absent = '<span class="miss">absent</span>'
     sum_rows, sum_matches = [], 0
-    sum_total = max(len(expected), len(spark_summary))
-    for e, s in zip(expected, spark_summary):
-        d_avg = abs(float(e["AVG_LOAN"]) - s["AVG_LOAN"])
-        d_rate = abs(float(e["DEFAULT_RATE"]) - s["DEFAULT_RATE"])
-        ok = e["LTV_BAND"] == s["LTV_BAND"] and int(e["N_LOANS"]) == s["N_LOANS"] and d_avg <= TOL and d_rate <= TOL
+    sum_total = len(exp_by_band.keys() | spk_by_band.keys())
+    for band in sorted(exp_by_band.keys() | spk_by_band.keys()):
+        e, s = exp_by_band.get(band), spk_by_band.get(band)
+        ok, diff = False, "n/a"
+        if e and s:
+            d = max(abs(float(e["AVG_LOAN"]) - s["AVG_LOAN"]), abs(float(e["DEFAULT_RATE"]) - s["DEFAULT_RATE"]))
+            ok, diff = int(e["N_LOANS"]) == s["N_LOANS"] and d <= TOL, f"{d:.1e}"
         sum_matches += ok
-        sum_rows.append([f'<b>{e["LTV_BAND"]}</b>', fmt(float(e["N_LOANS"])), fmt(e["AVG_LOAN"], "money"),
-                         fmt(e["DEFAULT_RATE"], "pct"), fmt(float(s["N_LOANS"])), fmt(s["AVG_LOAN"], "money"),
-                         fmt(s["DEFAULT_RATE"], "pct"), f"{max(d_avg, d_rate):.1e}",
+        exp_cells = [fmt(float(e["N_LOANS"])), fmt(e["AVG_LOAN"], "money"), fmt(e["DEFAULT_RATE"], "pct")] if e else [absent] * 3
+        spk_cells = [fmt(float(s["N_LOANS"])), fmt(s["AVG_LOAN"], "money"), fmt(s["DEFAULT_RATE"], "pct")] if s else [absent] * 3
+        sum_rows.append([f"<b>{html.escape(band)}</b>", *exp_cells, *spk_cells, diff,
                          '<span class="ok">MATCH</span>' if ok else '<span class="bad">DIFF</span>'])
 
     verdict_ok = row_mismatches == 0 and sum_matches == sum_total
@@ -122,8 +129,8 @@ def main():
 
     sas_data = code_block(os.path.join(PROJECT_ROOT, "sas", "06_simple_ltv_bands.sas"), "data work.ltv_bands", "run;")
     sas_means = code_block(os.path.join(PROJECT_ROOT, "sas", "06_simple_ltv_bands.sas"), "proc means", "run;")
-    py_bands = code_block(simple_ltv_bands.__file__, "ltv = when(", ".otherwise(")
-    py_sum = code_block(simple_ltv_bands.__file__, "bands.groupBy", ".orderBy(")
+    py_bands = code_block(simple_ltv_bands.__file__, "ltv = when(", "    )")
+    py_sum = code_block(simple_ltv_bands.__file__, "bands.groupBy", "    )")
 
     page = f"""<!doctype html><html><head><meta charset="utf-8">
 <title>SAS to PySpark: LTV band example</title>

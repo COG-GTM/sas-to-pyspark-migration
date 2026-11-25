@@ -20,7 +20,7 @@ th{background:#eef1f6;font-weight:600} td:first-child,th:first-child{text-align:
 th.sasg{background:#dbe8fb} th.spkg{background:#fde4d8}
 </style></head><body>
 <header><h1>SAS &rarr; PySpark: simple LTV band migration</h1>
-<p>sas/06_simple_ltv_bands.sas &rarr; pyspark/06_simple_ltv_bands.py &middot; data/home_equity.csv &middot; Spark 4.3.0 &middot; generated 2026-11-25 15:28 UTC</p></header>
+<p>sas/06_simple_ltv_bands.sas &rarr; pyspark/06_simple_ltv_bands.py &middot; data/home_equity.csv &middot; Spark 4.3.0 &middot; generated 2026-11-25 15:29 UTC</p></header>
 <main>
 <section><h2>1. Input data</h2><p class="sub">First 12 raw rows of data/home_equity.csv (5 of 18 columns used). <span class="miss">.</span> = missing value.</p>
 <div class="kpis"><div class="kpi">Input rows<b>5,960</b></div><div class="kpi">Rows after filter (LOAN, VALUE present, VALUE &gt; 0)<b>5,848</b></div><div class="kpi">Rows dropped<b>112</b></div></div><br>
@@ -29,7 +29,7 @@ th.sasg{background:#dbe8fb} th.spkg{background:#fde4d8}
 <section><h2>2. The migration</h2><p class="sub">DATA step &rarr; DataFrame transformations; PROC MEANS NWAY CLASS &rarr; groupBy().agg().</p>
 <div class="grid"><div><p class="lbl sas">SAS</p><pre>data work.ltv_bands;
     length LTV_BAND $ 7;
-    set work.home_equity(keep=BAD LOAN MORTDUE VALUE REASON);
+    set work.he06_input(keep=BAD LOAN MORTDUE VALUE REASON);
 
     /* Subsetting IF: drop rows with no loan amount or property value */
     if LOAN ne . and VALUE ne . and VALUE &gt; 0;
@@ -64,6 +64,8 @@ run;</pre></div>
             .when(col(&quot;LTV&quot;) &lt; 0.8, lit(&quot;LOW&quot;))
             .when(col(&quot;LTV&quot;) &lt; 1.0, lit(&quot;MEDIUM&quot;))
             .otherwise(lit(&quot;HIGH&quot;)),
+        )
+    )
 
         bands.groupBy(&quot;LTV_BAND&quot;)
         .agg(
@@ -71,7 +73,8 @@ run;</pre></div>
             avg(&quot;LOAN&quot;).alias(&quot;AVG_LOAN&quot;),
             avg(&quot;BAD&quot;).alias(&quot;DEFAULT_RATE&quot;),
         )
-        .orderBy(&quot;LTV_BAND&quot;)</pre></div></div></section>
+        .orderBy(&quot;LTV_BAND&quot;)
+    )</pre></div></div></section>
 
 <section><h2>3. Row-level output: SAS-expected vs PySpark</h2><p class="sub">First 12 rows after the filter; all 5,848 rows are compared, 0 mismatches.</p>
 <table><thead><tr><th>LOAN</th><th>MORTDUE</th><th>VALUE</th><th class="sasg">SAS LTV</th><th class="sasg">SAS LTV_BAND</th><th class="spkg">PySpark LTV</th><th class="spkg">PySpark LTV_BAND</th><th>Check</th></tr></thead>
