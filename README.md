@@ -97,10 +97,10 @@ python tools/build_06_comparison_page.py # docs/06_ltv_bands_comparison.html (in
 python -m pytest tests/ -v
 ```
 
-Or a single suite with unittest directly:
+Or with unittest directly (`tests/` is not a package, so use discovery):
 
 ```bash
-python -m unittest tests.test_pyspark_outputs -v
+python -m unittest discover -s tests -v
 ```
 
 ---
