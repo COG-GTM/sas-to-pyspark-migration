@@ -1,6 +1,6 @@
 # SAS to PySpark Migration Demo
 
-This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, we show five complete migration examples — from basic data loading to logistic regression modeling — with side-by-side SAS and PySpark code, inline comments mapping each SAS construct to its PySpark equivalent, and validation tests to ensure correctness.
+This repository demonstrates how [Devin](https://devin.ai) can accelerate SAS-to-PySpark migration for financial services organizations. Using a real-world home equity loan dataset, we show six migration examples — from basic data loading to logistic regression modeling, plus a minimal LTV-band example with a parity check — with side-by-side SAS and PySpark code, inline comments mapping each SAS construct to its PySpark equivalent, and validation tests to ensure correctness.
 
 Built for teams evaluating a move from SAS to open-source distributed computing on platforms like Databricks, Amazon EMR, or Azure Synapse.
 
@@ -146,18 +146,28 @@ sas-to-pyspark-migration/
 │   ├── 02_data_cleaning.sas                   # DATA step, arrays, PROC MEANS
 │   ├── 03_aggregation_reporting.sas           # PROC FREQ, PROC MEANS, PROC TABULATE, PROC SQL
 │   ├── 04_risk_segmentation.sas               # PROC FORMAT, risk scoring, PROC FREQ
-│   └── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
+│   ├── 05_logistic_regression.sas             # PROC LOGISTIC, stepwise, ROC/AUC
+│   └── 06_simple_ltv_bands.sas                # Minimal DATA step + PROC MEANS (LTV bands)
 ├── pyspark/
 │   ├── 01_data_loading.py                     # spark.read.csv, printSchema, show
 │   ├── 02_data_cleaning.py                    # withColumn, when/otherwise, na.fill, filter
 │   ├── 03_aggregation_reporting.py            # groupBy, agg, crosstab, spark.sql
 │   ├── 04_risk_segmentation.py                # when/otherwise chains, risk scoring
-│   └── 05_logistic_regression.py              # ML Pipeline, LogisticRegression, Evaluators
+│   ├── 05_logistic_regression.py              # ML Pipeline, LogisticRegression, Evaluators
+│   └── 06_simple_ltv_bands.py                 # filter, when/otherwise, groupBy/agg
+├── expected/
+│   └── 06_ltv_band_summary_sas_expected.csv   # SAS-expected summary (from tests/sas_reference.py)
+├── tools/
+│   └── build_06_comparison_page.py            # Builds the input/output comparison page
+├── docs/
+│   └── 06_ltv_bands_comparison.html           # Input vs SAS-expected vs PySpark output
 ├── migration_guide/
 │   ├── sas_to_pyspark_mapping.md              # Complete SAS → PySpark construct reference
 │   └── common_patterns.md                     # Side-by-side migration pattern examples
 └── tests/
-    └── test_pyspark_outputs.py                # Validation tests for all PySpark scripts
+    ├── test_pyspark_outputs.py                # Validation tests for examples 01-05
+    ├── sas_reference.py                       # Plain-Python SAS logic for example 06 (no SAS runtime)
+    └── test_06_simple_ltv_bands.py            # Example 06 parity tests
 ```
 
 ---
