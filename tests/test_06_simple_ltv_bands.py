@@ -9,12 +9,14 @@ missing-value semantics; no SAS runtime was used.
 import csv
 import importlib.util
 import os
+import sys
 import tempfile
 import unittest
 
 from pyspark.sql import SparkSession
 
-from sas_reference import EXPECTED_PATH, ltv_band_rows, ltv_band_summary
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sas_reference import EXPECTED_PATH, ltv_band_rows, ltv_band_summary  # noqa: E402
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT_PATH = os.path.join(PROJECT_ROOT, "pyspark", "06_simple_ltv_bands.py")
