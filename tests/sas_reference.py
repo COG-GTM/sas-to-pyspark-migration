@@ -68,7 +68,8 @@ def ltv_band_rows(path=DATA_PATH):
 
 def row_key(row):
     """Order-independent sort key for a banded row (missing sorts first, like SAS)."""
-    return tuple((row[c] is not None, row[c] or 0) for c in ("BAD", "LOAN", "MORTDUE", "VALUE"))
+    numeric = tuple((row[c] is not None, row[c] or 0) for c in ("BAD", "LOAN", "MORTDUE", "VALUE"))
+    return numeric + ((row["REASON"] is not None, row["REASON"] or ""),)
 
 
 def ltv_band_summary(rows):
