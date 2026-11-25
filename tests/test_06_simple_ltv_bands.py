@@ -33,6 +33,7 @@ class TestSimpleLtvBandsParity(unittest.TestCase):
         cls.spark = SparkSession.builder \
             .appName("HomeEquity_SimpleLtvBands_Tests") \
             .master("local[*]") \
+            .config("spark.driver.memory", "2g") \
             .config("spark.sql.shuffle.partitions", "4") \
             .getOrCreate()
         df = cls.spark.read.csv(simple_ltv_bands.DATA_PATH, header=True, inferSchema=True)
