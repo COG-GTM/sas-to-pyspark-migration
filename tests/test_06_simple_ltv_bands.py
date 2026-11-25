@@ -80,7 +80,8 @@ class TestSimpleLtvBandsParity(unittest.TestCase):
             ("0", "1000", "199", "200", "MEDIUM"),    # 0.995
             ("0", "1000", "200", "200", "HIGH"),      # exactly 1.0
         ]
-        expected = [c[4] for c in cases if c[4] != "dropped"]
+        expected = sorted(((float(c[2]) if c[2] else None, c[4]) for c in cases if c[4] != "dropped"),
+                          key=lambda pair: (pair[0] is not None, pair[0] or 0))
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "cases.csv")
             with open(path, "w", newline="") as f:
@@ -88,11 +89,11 @@ class TestSimpleLtvBandsParity(unittest.TestCase):
                 writer.writerow(["BAD", "LOAN", "MORTDUE", "VALUE", "REASON"])
                 writer.writerows([c[:4] + ("HomeImp",) for c in cases])
             df = self.spark.read.csv(path, header=True, inferSchema=True)
-            spark_bands = [r["LTV_BAND"] for r in sorted(
+            spark_bands = [(r["MORTDUE"], r["LTV_BAND"]) for r in sorted(
                 (r.asDict() for r in simple_ltv_bands.build_ltv_bands(df).collect()), key=row_key)]
-            reference_bands = [r["LTV_BAND"] for r in sorted(ltv_band_rows(path), key=row_key)]
-        self.assertEqual(sorted(spark_bands), sorted(expected))
-        self.assertEqual(spark_bands, reference_bands)
+            reference_bands = [(r["MORTDUE"], r["LTV_BAND"]) for r in sorted(ltv_band_rows(path), key=row_key)]
+        self.assertEqual(spark_bands, expected)
+        self.assertEqual(reference_bands, expected)
 
     def test_summary_parity(self):
         """PySpark PROC MEANS replacement matches the SAS-expected summary."""
