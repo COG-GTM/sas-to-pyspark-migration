@@ -89,7 +89,7 @@ def main():
 
     # --- row-level comparison --------------------------------------------------------
     def same_row(s, e):
-        if any(s[c] != e[c] for c in ("BAD", "LOAN", "MORTDUE", "VALUE", "LTV_BAND")):
+        if any(s[c] != e[c] for c in ("BAD", "LOAN", "MORTDUE", "VALUE", "REASON", "LTV_BAND")):
             return False
         if s["LTV"] is None or e["LTV"] is None:
             return s["LTV"] is None and e["LTV"] is None

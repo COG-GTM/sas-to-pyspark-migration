@@ -60,7 +60,7 @@ class TestSimpleLtvBandsParity(unittest.TestCase):
         spark_rows = sorted((r.asDict() for r in self.bands.collect()), key=row_key)
         self.assertEqual(len(spark_rows), len(reference))
         for got, exp in zip(spark_rows, reference):
-            for column in ("BAD", "LOAN", "MORTDUE", "VALUE", "LTV_BAND"):
+            for column in ("BAD", "LOAN", "MORTDUE", "VALUE", "REASON", "LTV_BAND"):
                 self.assertEqual(got[column], exp[column], column)
             if exp["LTV"] is None:
                 self.assertIsNone(got["LTV"])

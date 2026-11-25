@@ -62,7 +62,7 @@ def ltv_band_rows(path=DATA_PATH):
                 band = "HIGH"
 
             rows.append({"BAD": bad, "LOAN": loan, "MORTDUE": mortdue, "VALUE": value,
-                         "REASON": rec["REASON"], "LTV": ltv, "LTV_BAND": band})
+                         "REASON": rec["REASON"] or None, "LTV": ltv, "LTV_BAND": band})  # blank SAS char = missing; Spark reads it as null
     return rows
 
 
