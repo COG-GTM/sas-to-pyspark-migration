@@ -181,7 +181,7 @@ th.sasg{{background:#dbe8fb}} th.spkg{{background:#fde4d8}}
 <div class="grid"><div><p class="lbl sas">SAS</p><pre>{sas_data}\n\n{sas_means}</pre></div>
 <div><p class="lbl spk">PySpark</p><pre>{py_bands}\n\n{py_sum}</pre></div></div></section>
 
-<section><h2>3. Row-level output: SAS-expected vs PySpark</h2><p class="sub">First {SAMPLE_ROWS} rows after the filter, rows paired by BAD, LOAN, MORTDUE, VALUE (Spark guarantees no row order); all {row_total:,} pairs are compared, {row_mismatches} mismatches.</p>
+<section><h2>3. Row-level output: SAS-expected vs PySpark</h2><p class="sub">First {SAMPLE_ROWS} filtered rows in BAD, LOAN, MORTDUE, VALUE order (rows are paired on these columns because Spark guarantees no row order); all {row_total:,} pairs are compared, {row_mismatches} mismatches.</p>
 <table><thead><tr><th>LOAN</th><th>MORTDUE</th><th>VALUE</th><th class="sasg">SAS LTV</th><th class="sasg">SAS LTV_BAND</th><th class="spkg">PySpark LTV</th><th class="spkg">PySpark LTV_BAND</th><th>Check</th></tr></thead>
 <tbody>{"".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in row_cmp)}</tbody></table></section>
 
