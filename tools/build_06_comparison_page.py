@@ -126,6 +126,7 @@ def main():
     spk_by_band = {r["LTV_BAND"]: r for r in spark_summary}
     sum_rows, sum_matches = [], 0
     sum_total = len(exp_by_band.keys() | spk_by_band.keys())
+    sum_total += (len(expected) - len(exp_by_band)) + (len(spark_summary) - len(spk_by_band))  # duplicate bands never match
     for band in sorted(exp_by_band.keys() | spk_by_band.keys()):
         e, s = exp_by_band.get(band), spk_by_band.get(band)
         ok, diff = False, "n/a"
