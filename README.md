@@ -94,10 +94,10 @@ python tools/build_06_comparison_page.py # docs/06_ltv_bands_comparison.html (in
 ### Running the Tests
 
 ```bash
-python -m pytest tests/test_pyspark_outputs.py -v
+python -m pytest tests/ -v
 ```
 
-Or with unittest directly:
+Or a single suite with unittest directly:
 
 ```bash
 python -m unittest tests.test_pyspark_outputs -v
